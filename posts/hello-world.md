@@ -1,11 +1,17 @@
-# Hello, world
+---
+title: Hello, world
+date: 2026-05-29
+summary: First post — what this site is for.
+---
 
-This is the first post. Write in plain **Markdown** — headings, **bold**,
-*italics*, [links](https://example.com), lists, quotes, and code all work.
+This is the first post. Everything above the `---` lines is the post's
+**front-matter** (its title, date, and summary). Everything below is the
+post body, written in plain **Markdown**.
 
-## A heading
+## Writing posts
 
-Some text under a heading.
+Headings, **bold**, *italics*, [links](https://example.com), lists, quotes,
+and code all work:
 
 - a list item
 - another item
@@ -18,4 +24,4 @@ Inline `code` looks like that, and a block looks like this:
 console.log("hello");
 ```
 
-That's it. Delete this post when you're ready to write your own.
+Delete this post when you're ready to write your own.

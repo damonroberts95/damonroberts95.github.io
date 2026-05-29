@@ -4,11 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Damon Roberts</title>
-  <meta name="description" content="Damon Roberts — TAGLINE_PLACEHOLDER" />
+  <meta name="description" content="Damon Roberts — presales engineer working with IoT hardware and software, with a passion for energy and manufacturing." />
 
   <!-- Open Graph -->
   <meta property="og:title" content="Damon Roberts" />
-  <meta property="og:description" content="TAGLINE_PLACEHOLDER" />
+  <meta property="og:description" content="Presales engineer working with IoT hardware and software, with a passion for energy and manufacturing." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://damonroberts.co.uk" />
 
@@ -23,21 +23,29 @@
     <span class="blob blob-2"></span>
     <span class="blob blob-3"></span>
   </div>
+  <!-- live node-network canvas (sensors / grid / data) -->
+  <canvas id="bg" class="bg" aria-hidden="true"></canvas>
   <div class="grain" aria-hidden="true"></div>
 
   <main class="wrap">
     <header class="hero">
-      <p class="eyebrow reveal" style="--d:0">// based in the uk</p>
+      <p class="eyebrow reveal" style="--d:0">// presales engineer &middot; iot &middot; uk</p>
       <h1 class="name">
         <span class="line reveal" style="--d:1">DAMON</span>
         <span class="line line--grad reveal" style="--d:2">ROBERTS</span>
       </h1>
-      <p class="tagline reveal" style="--d:3">TAGLINE_PLACEHOLDER</p>
+      <p class="tagline reveal" style="--d:3">Presales engineer working with IoT hardware and software &mdash; with a passion for energy and manufacturing.</p>
 
-      <nav class="links reveal" style="--d:4" aria-label="Contact">
-        <a class="link" href="mailto:EMAIL_PLACEHOLDER">
+      <ul class="focus reveal" style="--d:4" aria-label="Focus areas">
+        <li class="chip">IoT hardware &amp; software</li>
+        <li class="chip">Energy</li>
+        <li class="chip">Manufacturing</li>
+      </ul>
+
+      <nav class="links reveal" style="--d:5" aria-label="Contact">
+        <a class="link" href="mailto:hello@damonroberts.co.uk">
           <span class="link__label">Email</span>
-          <span class="link__val">EMAIL_PLACEHOLDER</span>
+          <span class="link__val">hello@damonroberts.co.uk</span>
           <span class="link__arrow">&#8599;</span>
         </a>
         <a class="link" href="https://github.com/damonroberts95" target="_blank" rel="noopener">
@@ -45,15 +53,17 @@
           <span class="link__val">@damonroberts95</span>
           <span class="link__arrow">&#8599;</span>
         </a>
-        <a class="link" href="LINKEDIN_PLACEHOLDER" target="_blank" rel="noopener">
+        <!-- LinkedIn: add your real profile URL, e.g. https://www.linkedin.com/in/your-handle
+        <a class="link" href="LINKEDIN_URL_HERE" target="_blank" rel="noopener">
           <span class="link__label">LinkedIn</span>
-          <span class="link__val">in/damonroberts</span>
+          <span class="link__val">in/your-handle</span>
           <span class="link__arrow">&#8599;</span>
         </a>
+        -->
       </nav>
     </header>
 
-    <section class="writing reveal" style="--d:5" aria-labelledby="writing-h">
+    <section class="writing reveal" style="--d:6" aria-labelledby="writing-h">
       <div class="writing__head">
         <h2 id="writing-h">Writing</h2>
         <span class="writing__rule"></span>
@@ -70,6 +80,7 @@
     </footer>
   </main>
 
+  <script src="bg.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

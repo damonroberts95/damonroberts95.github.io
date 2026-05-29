@@ -3,8 +3,10 @@
 
    How it works:
      - reads the ?slug=... from the URL
-     - finds that post in posts/index.json (for title + date)
-     - fetches  posts/<slug>.md  and renders the Markdown to HTML
+     - fetches  posts/<slug>.md
+     - splits off the front-matter (the bit between the --- lines)
+       for the title + date
+     - renders the Markdown body to HTML with marked.js
 
    You normally never edit this file. To add a post, see README.
    ============================================================ */
@@ -14,27 +16,24 @@ document.getElementById("year").textContent = new Date().getFullYear();
 const article = document.getElementById("article");
 const slug = new URLSearchParams(location.search).get("slug") || "";
 
-if (!slug) {
+if (!slug || !/^[a-z0-9-]+$/i.test(slug)) {
   showError("No post specified.");
 } else {
-  // get the post's metadata (title/date) from the index
-  fetch("posts/index.json")
-    .then((r) => r.json())
-    .then((posts) => {
-      const meta = posts.find((p) => p.slug === slug);
-      // fetch the markdown body
-      return fetch(`posts/${slug}.md`).then((r) => {
-        if (!r.ok) throw new Error("not found");
-        return r.text();
-      }).then((md) => ({ meta, md }));
+  fetch(`posts/${slug}.md`)
+    .then((r) => {
+      if (!r.ok) throw new Error("not found");
+      return r.text();
     })
-    .then(({ meta, md }) => render(meta, md))
+    .then((raw) => {
+      const { meta, body } = parseFrontMatter(raw);
+      render(meta, body);
+    })
     .catch(() => showError("Post not found."));
 }
 
 function render(meta, markdown) {
-  const title = meta ? meta.title : "Untitled";
-  const date = meta ? formatDate(meta.date) : "";
+  const title = meta.title || "Untitled";
+  const date = meta.date ? formatDate(meta.date) : "";
   document.title = `${title} — Damon Roberts`;
 
   const html = marked.parse(markdown);
@@ -44,6 +43,21 @@ function render(meta, markdown) {
       <p class="article__date">${date}</p>
     </header>
     <div class="article__body">${html}</div>`;
+}
+
+// Split "---\nkey: value\n---\nbody" into { meta:{...}, body:"..." }
+function parseFrontMatter(raw) {
+  const match = raw.match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
+  if (!match) return { meta: {}, body: raw };
+  const meta = {};
+  for (const line of match[1].split("\n")) {
+    const idx = line.indexOf(":");
+    if (idx === -1) continue;
+    const key = line.slice(0, idx).trim();
+    let val = line.slice(idx + 1).trim().replace(/^["']|["']$/g, "");
+    meta[key] = val;
+  }
+  return { meta, body: match[2] };
 }
 
 function showError(msg) {
