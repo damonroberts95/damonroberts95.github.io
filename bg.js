@@ -25,6 +25,7 @@
     minNodes: 28,
     maxNodes: 70,
     linkDist: 150,    // px: link two nodes when closer than this
+    minSep: 34,       // px: nodes repel below this so they never clump on the cursor
     speed: 0.18,      // base drift speed
     // full vaporwave palette — each node picks one at random
     palette: [
@@ -60,7 +61,7 @@
   applyDaylight(clockDaylight());
   setInterval(() => applyDaylight(clockDaylight()), 5 * 60 * 1000);
 
-  let w, h, dpr = 1, maxD2;
+  let w, h, dpr = 1, maxD2, minSep2;
   let nodes = [], pulses = [], links = [];
   const mouse = { x: -9999, y: -9999, active: false };
 
@@ -71,6 +72,7 @@
     canvas.style.width = innerWidth + "px";
     canvas.style.height = innerHeight + "px";
     maxD2 = (CONFIG.linkDist * dpr) ** 2;
+    minSep2 = (CONFIG.minSep * dpr) ** 2;
     seed();
   }
 
@@ -135,6 +137,15 @@
           ctx.strokeStyle = `rgba(${CONFIG.link},${alpha})`;
           ctx.stroke();
           links.push(a, b);
+
+          // anti-clump: push apart when too close (stops cursor-pull collapse)
+          if (!reduced && d2 < minSep2 && d2 > 0.01) {
+            const f = (1 - d2 / minSep2) * 0.04 * dpr;
+            const inv = 1 / Math.sqrt(d2);
+            const ux = dx * inv, uy = dy * inv;
+            a.vx += ux * f; a.vy += uy * f;
+            b.vx -= ux * f; b.vy -= uy * f;
+          }
         }
       }
     }
