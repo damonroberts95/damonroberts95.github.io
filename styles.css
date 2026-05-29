@@ -17,7 +17,7 @@
   --bg:        #08070d;   /* page background (near-black) */
   --bg-soft:   #11101a;   /* raised surfaces (link cards)  */
   --text:      #f4f2fb;   /* main text */
-  --muted:     #8b88a0;   /* dimmed text */
+  --muted:     #b9b6cf;   /* dimmed text */
   --line:      #221f31;   /* hairlines / borders */
 
   /* the gradient accent — used on name + hovers */
@@ -130,36 +130,7 @@ a { color: inherit; text-decoration: none; }
   font-size: clamp(1.1rem, 2.5vw, 1.4rem);
   color: var(--muted);
   max-width: 34ch;
-  margin-bottom: 1.6rem;
-}
-
-/* Focus chips — what I work on */
-.focus {
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
   margin-bottom: 3rem;
-}
-.chip {
-  font-size: 0.8rem;
-  letter-spacing: 0.02em;
-  padding: 0.45rem 0.9rem;
-  border-radius: 999px;
-  color: var(--text);
-  background: var(--bg-soft);
-  border: 1px solid var(--line);
-  position: relative;
-}
-.chip::before {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  margin-right: 0.5rem;
-  vertical-align: middle;
-  background: var(--grad);
 }
 
 /* Contact links — stacked cards */

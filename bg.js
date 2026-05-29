@@ -1,14 +1,15 @@
 /* ============================================================
-   bg.js — live "node network" background.
+   bg.js — live "node network" background (sensors / grid / data).
 
-   Draws drifting nodes (sensors) joined by lines (links) when
-   they're near each other, plus occasional energy pulses that
-   travel along the links. The whole field gently leans toward
-   the cursor. Evokes IoT / connected devices / data flow.
+   Drifting nodes joined by links when near, with occasional energy
+   pulses travelling the links, gently leaning toward the cursor.
 
-   Tuning knobs are in CONFIG below — safe to tweak.
-   Respects "prefers-reduced-motion": renders a single static
-   frame instead of animating.
+   Performance:
+     - distances compared squared (no per-pair sqrt)
+     - pulses are globally capped
+     - ADAPTIVE QUALITY: it measures FPS and raises/lowers the node
+       count to hit a smooth frame rate on whatever device is running.
+   Respects "prefers-reduced-motion" (renders one static frame).
    ============================================================ */
 
 (function () {
@@ -18,100 +19,138 @@
 
   // ---- CONFIG — tweak these ----
   const CONFIG = {
-    density: 0.00009,   // nodes per pixel (higher = more nodes)
-    maxNodes: 90,       // hard cap
-    linkDist: 150,      // px: draw a link when two nodes are closer than this
-    speed: 0.18,        // base drift speed
-    nodeColor: "236,72,153",   // pink  (rgb, no alpha)
-    linkColor: "168,85,247",   // purple
-    pulseColor: "249,115,22",  // orange
-    pulseChance: 0.004, // per-link, per-frame chance to spawn a pulse
+    minNodes: 16,        // never go below this
+    maxNodes: 80,        // never go above this
+    startDensity: 0.00006, // initial nodes per CSS pixel
+    linkDist: 150,       // px: link two nodes when closer than this
+    speed: 0.18,         // base drift speed
+    nodeColor: "236,72,153",  // pink
+    linkColor: "168,85,247",  // purple
+    pulseColor: "249,115,22", // orange
+    maxPulses: 8,        // hard cap on simultaneous pulses
+    pulseSpawn: 0.25,    // chance per frame to spawn one pulse
+    targetFps: 55,       // aim for this; scale quality to keep near it
   };
 
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  let w, h, nodes = [], pulses = [], dpr = 1;
+  let w, h, dpr = 1, maxD, maxD2;
+  let nodes = [], pulses = [], links = [];
+  let target = CONFIG.minNodes;
   const mouse = { x: -9999, y: -9999, active: false };
 
   function resize() {
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
-    w = canvas.width = innerWidth * dpr;
-    h = canvas.height = innerHeight * dpr;
+    dpr = Math.min(window.devicePixelRatio || 1, 1.5); // cap dpr — big perf win
+    w = canvas.width = Math.floor(innerWidth * dpr);
+    h = canvas.height = Math.floor(innerHeight * dpr);
     canvas.style.width = innerWidth + "px";
     canvas.style.height = innerHeight + "px";
-    seed();
+    maxD = CONFIG.linkDist * dpr;
+    maxD2 = maxD * maxD;
+    // set the starting target from screen size, then adaptivity tunes it
+    const fromArea = Math.floor(innerWidth * innerHeight * CONFIG.startDensity);
+    target = clamp(fromArea, CONFIG.minNodes, CONFIG.maxNodes);
+    syncNodes();
   }
 
-  function seed() {
-    const count = Math.min(CONFIG.maxNodes, Math.floor(w * h / dpr / dpr * CONFIG.density));
-    nodes = [];
-    for (let i = 0; i < count; i++) {
-      nodes.push({
-        x: rand(0, w),
-        y: rand(0, h),
-        vx: rand(-1, 1) * CONFIG.speed * dpr,
-        vy: rand(-1, 1) * CONFIG.speed * dpr,
-        r: rand(1.2, 2.6) * dpr,
-      });
+  function makeNode() {
+    return {
+      x: rand(0, w),
+      y: rand(0, h),
+      vx: rand(-1, 1) * CONFIG.speed * dpr,
+      vy: rand(-1, 1) * CONFIG.speed * dpr,
+      r: rand(1.2, 2.4) * dpr,
+    };
+  }
+
+  // Grow/shrink the node list toward `target` without a full reseed.
+  function syncNodes() {
+    while (nodes.length < target) nodes.push(makeNode());
+    if (nodes.length > target) nodes.length = target;
+  }
+
+  // ---- adaptive FPS tracking ----
+  let lastT = 0, acc = 0, frames = 0;
+
+  function adapt(dt) {
+    if (dt > 0 && dt < 1000) { acc += dt; frames++; }
+    if (acc < 1000) return;
+    const fps = (frames * 1000) / acc;
+    acc = 0; frames = 0;
+    if (fps < CONFIG.targetFps - 8 && target > CONFIG.minNodes) {
+      target = Math.max(CONFIG.minNodes, target - 6); // laggy → shed nodes fast
+      syncNodes();
+    } else if (fps > CONFIG.targetFps + 3 && target < CONFIG.maxNodes) {
+      target = Math.min(CONFIG.maxNodes, target + 2); // headroom → add slowly
+      syncNodes();
     }
   }
 
-  function step() {
+  function step(t) {
+    const dt = t - lastT; lastT = t;
+    if (!reduced) adapt(dt);
+
     ctx.clearRect(0, 0, w, h);
 
     // move + draw nodes
-    for (const n of nodes) {
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
       if (!reduced) {
-        n.x += n.vx;
-        n.y += n.vy;
-        // gentle pull toward cursor
+        n.x += n.vx; n.y += n.vy;
         if (mouse.active) {
           const dx = mouse.x - n.x, dy = mouse.y - n.y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < 240000) { n.vx += dx * 0.000004 * dpr; n.vy += dy * 0.000004 * dpr; }
+          if (dx * dx + dy * dy < 240000) {
+            n.vx += dx * 0.000004 * dpr;
+            n.vy += dy * 0.000004 * dpr;
+          }
         }
-        // wrap around edges
-        if (n.x < 0) n.x = w; if (n.x > w) n.x = 0;
-        if (n.y < 0) n.y = h; if (n.y > h) n.y = 0;
-        // friction so cursor pull doesn't accelerate forever
+        if (n.x < 0) n.x = w; else if (n.x > w) n.x = 0;
+        if (n.y < 0) n.y = h; else if (n.y > h) n.y = 0;
         n.vx *= 0.992; n.vy *= 0.992;
       }
       ctx.beginPath();
-      ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+      ctx.arc(n.x, n.y, n.r, 0, 6.283185);
       ctx.fillStyle = `rgba(${CONFIG.nodeColor},0.9)`;
       ctx.fill();
     }
 
-    // draw links + maybe spawn pulses
-    const maxD = CONFIG.linkDist * dpr;
+    // links — squared-distance compare, quadratic alpha falloff (no sqrt)
+    links.length = 0;
+    ctx.lineWidth = dpr;
     for (let i = 0; i < nodes.length; i++) {
+      const a = nodes[i];
       for (let j = i + 1; j < nodes.length; j++) {
-        const a = nodes[i], b = nodes[j];
+        const b = nodes[j];
         const dx = a.x - b.x, dy = a.y - b.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist < maxD) {
-          const alpha = (1 - dist / maxD) * 0.5;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < maxD2) {
+          const alpha = (1 - d2 / maxD2) * 0.5;
           ctx.beginPath();
           ctx.moveTo(a.x, a.y);
           ctx.lineTo(b.x, b.y);
           ctx.strokeStyle = `rgba(${CONFIG.linkColor},${alpha})`;
-          ctx.lineWidth = dpr;
           ctx.stroke();
-          if (!reduced && Math.random() < CONFIG.pulseChance) {
-            pulses.push({ a, b, t: 0 });
-          }
+          links.push(a, b); // remember close pairs for pulse spawning
         }
       }
     }
 
-    // draw + advance energy pulses
-    pulses = pulses.filter((p) => p.t <= 1);
-    for (const p of pulses) {
+    // spawn at most one pulse per frame, on a random existing link
+    if (!reduced && links.length && pulses.length < CONFIG.maxPulses &&
+        Math.random() < CONFIG.pulseSpawn) {
+      const k = (Math.floor(Math.random() * (links.length / 2)) | 0) * 2;
+      pulses.push({ a: links[k], b: links[k + 1], t: 0 });
+    }
+
+    // draw + advance pulses
+    for (let i = pulses.length - 1; i >= 0; i--) {
+      const p = pulses[i];
       p.t += 0.02;
+      if (p.t > 1) { pulses.splice(i, 1); continue; }
       const x = p.a.x + (p.b.x - p.a.x) * p.t;
       const y = p.a.y + (p.b.y - p.a.y) * p.t;
       ctx.beginPath();
-      ctx.arc(x, y, 2.2 * dpr, 0, Math.PI * 2);
+      ctx.arc(x, y, 2.2 * dpr, 0, 6.283185);
       ctx.fillStyle = `rgba(${CONFIG.pulseColor},${1 - p.t})`;
       ctx.fill();
     }
@@ -120,6 +159,7 @@
   }
 
   function rand(a, b) { return a + Math.random() * (b - a); }
+  function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
   addEventListener("resize", resize);
   addEventListener("pointermove", (e) => {
@@ -128,5 +168,5 @@
   addEventListener("pointerleave", () => { mouse.active = false; });
 
   resize();
-  step(); // animates, or draws one static frame if reduced-motion
+  requestAnimationFrame(step); // animates, or draws one frame if reduced-motion
 })();
