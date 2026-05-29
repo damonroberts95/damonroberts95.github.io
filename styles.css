@@ -20,8 +20,10 @@
   --muted:     #b9b6cf;   /* dimmed text */
   --line:      #221f31;   /* hairlines / borders */
 
-  /* the gradient accent — used on name + hovers */
-  --grad: linear-gradient(110deg, #a855f7 0%, #ec4899 50%, #f97316 100%);
+  /* the gradient accent — used on name + hovers.
+     full vaporwave sweep so it has somewhere to travel when animated */
+  --grad: linear-gradient(110deg,
+      #22d3ee 0%, #a855f7 22%, #ec4899 45%, #f97316 68%, #facc15 82%, #22d3ee 100%);
   --accent: #ec4899;      /* solid fallback accent */
 
   --font-display: "Clash Display", sans-serif;
@@ -36,7 +38,16 @@
 html { scroll-behavior: smooth; }
 
 body {
-  background: var(--bg);
+  /* Vaporwave sunset wash — pure gradients (no blur). Iconic palette:
+     yellow horizon → orange → hot pink → purple → light blue, on a dark base. */
+  background:
+    radial-gradient(135% 66% at 50% 124%, rgba(255, 240, 105, 0.62), transparent 58%),
+    radial-gradient(120% 64% at 26% 112%, rgba(255, 140, 70, 0.54), transparent 57%),
+    radial-gradient(128% 74% at 74% 98%, rgba(255, 86, 200, 0.46), transparent 60%),
+    radial-gradient(122% 96% at 84% 4%, rgba(180, 90, 246, 0.50), transparent 60%),
+    radial-gradient(100% 82% at 16% -4%, rgba(120, 196, 255, 0.30), transparent 56%),
+    var(--bg);
+  background-attachment: fixed;
   color: var(--text);
   font-family: var(--font-body);
   font-size: 17px;
@@ -49,33 +60,53 @@ body {
 
 a { color: inherit; text-decoration: none; }
 
-/* Animated gradient field — three soft blobs drifting behind content */
-.field {
+/* Node-network canvas — sits above the gradient wash, below content.
+   opacity is set by JS (--glow) for time-of-day brightness. */
+.bg {
   position: fixed;
   inset: 0;
   z-index: -2;
-  overflow: hidden;
+  pointer-events: none;
+  opacity: var(--glow, 0.85);
 }
-.blob {
-  position: absolute;
-  width: 46vw;
-  height: 46vw;
-  border-radius: 50%;
-  filter: blur(90px);
-  opacity: 0.55;
-  will-change: transform;
-}
-.blob-1 { background: #7c3aed; top: -10%;  left: -8%;  animation: drift1 22s ease-in-out infinite; }
-.blob-2 { background: #db2777; top: 30%;   right: -12%; animation: drift2 26s ease-in-out infinite; }
-.blob-3 { background: #ea580c; bottom: -15%; left: 25%;  animation: drift3 30s ease-in-out infinite; opacity: 0.4; }
 
-/* Live node-network canvas — sits above the blobs, below content */
-.bg {
+/* Daytime warm glow — JS sets --day (0 = night, 1 = midday).
+   screen blend adds brightness + yellow during the day. */
+body::before {
+  content: "";
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.7;
+  background:
+    radial-gradient(95% 75% at 50% 118%, rgba(255, 236, 110, 0.55), transparent 56%),
+    radial-gradient(80% 65% at 24% 108%, rgba(255, 176, 70, 0.45), transparent 55%),
+    radial-gradient(85% 70% at 80% 6%, rgba(255, 120, 200, 0.30), transparent 58%);
+  mix-blend-mode: screen;
+  opacity: var(--day, 0.6);
+  transition: opacity 2s linear;
+}
+
+/* Night field — mottled deep purples & blues. JS sets --night (0 = midday,
+   up to ~0.8 = deep night). Many offset radials give an uneven, nebula-like
+   texture rather than a flat dim. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(38% 30% at 14% 22%, rgba(78, 52, 150, 0.65), transparent 62%),
+    radial-gradient(34% 26% at 82% 28%, rgba(34, 58, 140, 0.60), transparent 62%),
+    radial-gradient(30% 34% at 62% 74%, rgba(92, 40, 138, 0.55), transparent 62%),
+    radial-gradient(26% 26% at 28% 86%, rgba(26, 50, 120, 0.50), transparent 62%),
+    radial-gradient(44% 40% at 92% 90%, rgba(58, 36, 110, 0.55), transparent 66%),
+    radial-gradient(30% 30% at 46% 8%, rgba(48, 38, 120, 0.55), transparent 62%),
+    radial-gradient(22% 22% at 50% 50%, rgba(70, 44, 132, 0.40), transparent 60%),
+    #060510;
+  opacity: var(--night, 0);
+  transition: opacity 2s linear;
 }
 
 /* Fine grain overlay for texture (pure CSS, no image) */
@@ -84,7 +115,7 @@ a { color: inherit; text-decoration: none; }
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.04;
+  opacity: var(--grain, 0.04);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
@@ -117,13 +148,14 @@ a { color: inherit; text-decoration: none; }
 .name .line { display: block; }
 
 /* gradient-filled text for the surname */
+/* "ROBERTS" — bright vaporwave gradient that flows through the palette */
 .line--grad {
   background: var(--grad);
+  background-size: 300% auto;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  background-size: 200% auto;
-  animation: shimmer 8s linear infinite;
+  animation: shimmer 12s linear infinite;
 }
 
 .tagline {
@@ -133,8 +165,26 @@ a { color: inherit; text-decoration: none; }
   margin-bottom: 3rem;
 }
 
+/* About */
+.about { margin-bottom: 4rem; max-width: 60ch; }
+.about__head {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.4rem;
+  margin-bottom: 1rem;
+}
+.about p { color: var(--muted); line-height: 1.7; }
+
 /* Contact links — stacked cards */
 .links { display: flex; flex-direction: column; gap: 0.6rem; }
+
+/* the email "card" is a <button> — strip native chrome so it matches links */
+button.link {
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
 
 .link {
   display: grid;
@@ -170,7 +220,16 @@ a { color: inherit; text-decoration: none; }
 .link:hover .link__arrow { transform: translate(3px, -3px); color: var(--accent); }
 
 /* ---------- 5. WRITING ---------- */
-.writing { margin-bottom: 5rem; }
+.writing {
+  margin-bottom: 5rem;
+  /* slight translucent panel so the list sits above the colour wash */
+  background: rgba(17, 16, 26, 0.45);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 1.8rem 1.6rem;
+}
 .writing__head {
   display: flex;
   align-items: center;
@@ -213,9 +272,14 @@ a { color: inherit; text-decoration: none; }
   gap: 0.6rem;
   align-items: center;
   font-size: 0.85rem;
-  color: var(--muted);
-  padding-top: 2rem;
-  border-top: 1px solid var(--line);
+  color: var(--text);
+  /* translucent panel keeps it legible over the bright yellow glow */
+  background: rgba(8, 7, 13, 0.55);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  padding: 0.9rem 1.2rem;
+  border-radius: 12px;
+  border: 1px solid var(--line);
 }
 
 /* ---------- 7. ANIMATIONS ---------- */
@@ -232,28 +296,59 @@ a { color: inherit; text-decoration: none; }
 @keyframes shimmer {
   to { background-position: 200% center; }
 }
-@keyframes drift1 {
-  0%,100% { transform: translate(0,0) scale(1); }
-  50%     { transform: translate(12vw, 8vh) scale(1.15); }
-}
-@keyframes drift2 {
-  0%,100% { transform: translate(0,0) scale(1); }
-  50%     { transform: translate(-10vw, 12vh) scale(1.1); }
-}
-@keyframes drift3 {
-  0%,100% { transform: translate(0,0) scale(1); }
-  50%     { transform: translate(8vw, -10vh) scale(1.2); }
-}
 
 /* respect users who prefer no motion */
 @media (prefers-reduced-motion: reduce) {
   .reveal { animation: none; opacity: 1; transform: none; }
-  .blob, .line--grad { animation: none; }
+  .line--grad { animation: none; }
 }
 
-/* ---------- 8. RESPONSIVE ---------- */
+/* ---------- 8. SCROLLBAR (vaporwave) ---------- */
+html { scrollbar-width: thin; scrollbar-color: #c774e8 var(--bg); } /* Firefox */
+
+::-webkit-scrollbar { width: 12px; height: 12px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb {
+  border-radius: 10px;
+  border: 3px solid var(--bg);          /* inset padding effect */
+  background-image: linear-gradient(180deg, #c774e8, #ff6ad5 55%, #ff8a60);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-image: linear-gradient(180deg, #d98bff, #ff7fd6 55%, #ffa066);
+}
+
+/* ---------- 9. TOAST ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.6rem;
+  transform: translate(-50%, 1.2rem);
+  z-index: 200;
+  padding: 0.7rem 1.2rem;
+  font-size: 0.9rem;
+  color: var(--text);
+  background: rgba(17, 16, 26, 0.92);
+  border: 1px solid transparent;
+  border-image: var(--grad) 1;
+  border-radius: 999px;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.toast.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ---------- 10. RESPONSIVE ---------- */
 @media (max-width: 540px) {
   body { font-size: 16px; }
   .link { grid-template-columns: 1fr auto; }
   .link__label { display: none; }   /* hide the small label on phones */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast { transition: opacity 0.25s ease; transform: translate(-50%, 0); }
 }

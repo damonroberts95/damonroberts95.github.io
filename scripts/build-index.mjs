@@ -1,14 +1,17 @@
 /* ============================================================
-   build-index.mjs — regenerates posts/index.json
+   build-index.mjs — regenerates posts/index.json AND sitemap.xml
 
    Scans every posts/*.md file, reads its front-matter
-   (title / date / summary), and writes the list to
-   posts/index.json (newest first).
+   (title / date / summary), writes the list to posts/index.json
+   (newest first), and writes a sitemap.xml covering the home page
+   and every post.
 
    Runs automatically via GitHub Actions on every push
    (see .github/workflows/build-index.yml). You can also run
    it by hand:  node scripts/build-index.mjs
    ============================================================ */
+
+const SITE = "https://damonroberts.co.uk";
 
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
@@ -37,6 +40,27 @@ posts.sort((a, b) => (a.date < b.date ? 1 : -1));
 
 await writeFile(join(postsDir, "index.json"), JSON.stringify(posts, null, 2) + "\n");
 console.log(`Wrote posts/index.json — ${posts.length} post(s).`);
+
+// --- sitemap.xml: home page + every post ---
+const urls = [
+  { loc: `${SITE}/`, lastmod: posts[0]?.date || "" },
+  ...posts.map((p) => ({
+    loc: `${SITE}/post.html?slug=${p.slug}`,
+    lastmod: p.date,
+  })),
+];
+const sitemap =
+  `<?xml version="1.0" encoding="UTF-8"?>\n` +
+  `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+  urls
+    .map(
+      (u) =>
+        `  <url><loc>${u.loc}</loc>${u.lastmod ? `<lastmod>${u.lastmod}</lastmod>` : ""}</url>`
+    )
+    .join("\n") +
+  `\n</urlset>\n`;
+await writeFile(join(root, "sitemap.xml"), sitemap);
+console.log("Wrote sitemap.xml.");
 
 function parseFrontMatter(raw) {
   const match = raw.match(/^---\s*\n([\s\S]*?)\n---/);

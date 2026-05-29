@@ -3,14 +3,25 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Damon Roberts</title>
-  <meta name="description" content="Damon Roberts — presales engineer working with IoT hardware and software, with a passion for energy and manufacturing." />
+  <title>Damon Roberts — Presales Engineer, IIoT</title>
+  <meta name="description" content="Damon Roberts — presales engineer working with IIoT hardware and software, with a passion for energy and manufacturing." />
+  <meta name="theme-color" content="#08070d" />
+  <link rel="canonical" href="https://damonroberts.co.uk/" />
 
   <!-- Open Graph -->
   <meta property="og:title" content="Damon Roberts" />
-  <meta property="og:description" content="Presales engineer working with IoT hardware and software, with a passion for energy and manufacturing." />
+  <meta property="og:description" content="Presales engineer working with IIoT hardware and software, with a passion for energy and manufacturing." />
   <meta property="og:type" content="website" />
-  <meta property="og:url" content="https://damonroberts.co.uk" />
+  <meta property="og:url" content="https://damonroberts.co.uk/" />
+  <meta property="og:image" content="https://damonroberts.co.uk/og.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Damon Roberts" />
+  <meta name="twitter:description" content="Presales engineer working with IIoT hardware and software, with a passion for energy and manufacturing." />
+  <meta name="twitter:image" content="https://damonroberts.co.uk/og.png" />
 
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
@@ -18,13 +29,7 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!-- animated gradient field -->
-  <div class="field" aria-hidden="true">
-    <span class="blob blob-1"></span>
-    <span class="blob blob-2"></span>
-    <span class="blob blob-3"></span>
-  </div>
-  <!-- live node-network canvas (sensors / grid / data) -->
+  <!-- node-network canvas background -->
   <canvas id="bg" class="bg" aria-hidden="true"></canvas>
   <div class="grain" aria-hidden="true"></div>
 
@@ -38,11 +43,11 @@
       <p class="tagline reveal" style="--d:3">Presales engineer working with IIoT hardware and software &mdash; with a passion for energy and manufacturing.</p>
 
       <nav class="links reveal" style="--d:4" aria-label="Contact">
-        <a class="link" href="mailto:hello@damonroberts.co.uk">
+        <button type="button" class="link link--btn" id="copy-email" data-email="hello@damonroberts.co.uk">
           <span class="link__label">Email</span>
           <span class="link__val">hello@damonroberts.co.uk</span>
-          <span class="link__arrow">&#8599;</span>
-        </a>
+          <span class="link__arrow" aria-hidden="true">&#10697;</span>
+        </button>
         <a class="link" href="https://github.com/damonroberts95" target="_blank" rel="noopener">
           <span class="link__label">GitHub</span>
           <span class="link__val">@damonroberts95</span>
@@ -56,7 +61,18 @@
       </nav>
     </header>
 
-    <section class="writing reveal" style="--d:5" aria-labelledby="writing-h">
+    <section class="about reveal" style="--d:5" aria-labelledby="about-h">
+      <h2 id="about-h" class="about__head">About</h2>
+      <p>
+        I work in presales around industrial IoT &mdash; connecting hardware,
+        software and data across energy and manufacturing. Day to day that means
+        turning messy, real-world requirements into systems that actually ship:
+        scoping the kit, proving the integration, and translating between the
+        shop floor and the people buying the platform.
+      </p>
+    </section>
+
+    <section class="writing reveal" style="--d:6" aria-labelledby="writing-h">
       <div class="writing__head">
         <h2 id="writing-h">Writing</h2>
         <span class="writing__rule"></span>
@@ -72,6 +88,8 @@
       <span>damonroberts.co.uk</span>
     </footer>
   </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
   <script src="bg.js"></script>
   <script src="app.js"></script>

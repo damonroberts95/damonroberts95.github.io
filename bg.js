@@ -3,13 +3,15 @@
 
    Drifting nodes joined by links when near, with occasional energy
    pulses travelling the links, gently leaning toward the cursor.
+   Most nodes are pink/purple; a few warm (orange/yellow) for a
+   vaporwave accent. Colour wash itself is a static CSS gradient
+   (see styles.css) — this layer is just the network.
 
-   Performance:
+   Plain Canvas2D — cheap on the CPU, needs no GPU. Cost is bounded:
+     - fixed, modest node count (no per-frame quality thrashing)
      - distances compared squared (no per-pair sqrt)
-     - pulses are globally capped
-     - ADAPTIVE QUALITY: it measures FPS and raises/lowers the node
-       count to hit a smooth frame rate on whatever device is running.
-   Respects "prefers-reduced-motion" (renders one static frame).
+     - pulses globally capped
+   Respects prefers-reduced-motion (renders one static frame).
    ============================================================ */
 
 (function () {
@@ -19,77 +21,79 @@
 
   // ---- CONFIG — tweak these ----
   const CONFIG = {
-    minNodes: 16,        // never go below this
-    maxNodes: 80,        // never go above this
-    startDensity: 0.00006, // initial nodes per CSS pixel
-    linkDist: 150,       // px: link two nodes when closer than this
-    speed: 0.18,         // base drift speed
-    nodeColor: "236,72,153",  // pink
-    linkColor: "168,85,247",  // purple
-    pulseColor: "249,115,22", // orange
-    maxPulses: 8,        // hard cap on simultaneous pulses
-    pulseSpawn: 0.25,    // chance per frame to spawn one pulse
-    targetFps: 55,       // aim for this; scale quality to keep near it
+    density: 0.00007, // nodes per CSS pixel
+    minNodes: 28,
+    maxNodes: 70,
+    linkDist: 150,    // px: link two nodes when closer than this
+    speed: 0.18,      // base drift speed
+    // full vaporwave palette — each node picks one at random
+    palette: [
+      "255,106,213", // hot pink
+      "199,116,232", // purple
+      "120,196,255", // light blue
+      "34,211,238",  // cyan
+      "255,138,96",  // orange
+      "255,248,120", // yellow
+    ],
+    link: "199,116,232",  // vaporwave purple (links)
+    maxPulses: 7,
+    pulseSpawn: 0.22,
+    pulseSpeed: 0.012,    // lower = slower, travels full link before fading
   };
 
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  let w, h, dpr = 1, maxD, maxD2;
+  /* Time-of-day brightness: bright around midday, dark at night.
+     daylight 0..1 drives --day (warm glow), --night (dimmer), --glow (nodes). */
+  function applyDaylight(daylight) {
+    const root = document.documentElement.style;
+    root.setProperty("--day", daylight.toFixed(3));
+    root.setProperty("--night", (0.8 * (1 - daylight)).toFixed(3));
+    root.setProperty("--glow", (0.45 + 0.45 * daylight).toFixed(3));
+    root.setProperty("--grain", (0.04 + 0.07 * (1 - daylight)).toFixed(3)); // more texture at night
+  }
+  function clockDaylight() {
+    const now = new Date();
+    const hour = now.getHours() + now.getMinutes() / 60;
+    return Math.max(0, Math.sin(((hour - 6) / 12) * Math.PI)); // 0 at 6/18h, 1 at noon
+  }
+  applyDaylight(clockDaylight());
+  setInterval(() => applyDaylight(clockDaylight()), 5 * 60 * 1000);
+
+  let w, h, dpr = 1, maxD2;
   let nodes = [], pulses = [], links = [];
-  let target = CONFIG.minNodes;
   const mouse = { x: -9999, y: -9999, active: false };
 
   function resize() {
-    dpr = Math.min(window.devicePixelRatio || 1, 1.5); // cap dpr — big perf win
+    dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     w = canvas.width = Math.floor(innerWidth * dpr);
     h = canvas.height = Math.floor(innerHeight * dpr);
     canvas.style.width = innerWidth + "px";
     canvas.style.height = innerHeight + "px";
-    maxD = CONFIG.linkDist * dpr;
-    maxD2 = maxD * maxD;
-    // set the starting target from screen size, then adaptivity tunes it
-    const fromArea = Math.floor(innerWidth * innerHeight * CONFIG.startDensity);
-    target = clamp(fromArea, CONFIG.minNodes, CONFIG.maxNodes);
-    syncNodes();
+    maxD2 = (CONFIG.linkDist * dpr) ** 2;
+    seed();
   }
 
-  function makeNode() {
-    return {
-      x: rand(0, w),
-      y: rand(0, h),
-      vx: rand(-1, 1) * CONFIG.speed * dpr,
-      vy: rand(-1, 1) * CONFIG.speed * dpr,
-      r: rand(1.2, 2.4) * dpr,
-    };
-  }
-
-  // Grow/shrink the node list toward `target` without a full reseed.
-  function syncNodes() {
-    while (nodes.length < target) nodes.push(makeNode());
-    if (nodes.length > target) nodes.length = target;
-  }
-
-  // ---- adaptive FPS tracking ----
-  let lastT = 0, acc = 0, frames = 0;
-
-  function adapt(dt) {
-    if (dt > 0 && dt < 1000) { acc += dt; frames++; }
-    if (acc < 1000) return;
-    const fps = (frames * 1000) / acc;
-    acc = 0; frames = 0;
-    if (fps < CONFIG.targetFps - 8 && target > CONFIG.minNodes) {
-      target = Math.max(CONFIG.minNodes, target - 6); // laggy → shed nodes fast
-      syncNodes();
-    } else if (fps > CONFIG.targetFps + 3 && target < CONFIG.maxNodes) {
-      target = Math.min(CONFIG.maxNodes, target + 2); // headroom → add slowly
-      syncNodes();
+  function seed() {
+    const count = clamp(
+      Math.floor(innerWidth * innerHeight * CONFIG.density),
+      CONFIG.minNodes,
+      CONFIG.maxNodes
+    );
+    nodes = [];
+    for (let i = 0; i < count; i++) {
+      nodes.push({
+        x: rand(0, w),
+        y: rand(0, h),
+        vx: rand(-1, 1) * CONFIG.speed * dpr,
+        vy: rand(-1, 1) * CONFIG.speed * dpr,
+        r: rand(1.2, 2.4) * dpr,
+        color: CONFIG.palette[(Math.random() * CONFIG.palette.length) | 0],
+      });
     }
   }
 
-  function step(t) {
-    const dt = t - lastT; lastT = t;
-    if (!reduced) adapt(dt);
-
+  function step() {
     ctx.clearRect(0, 0, w, h);
 
     // move + draw nodes
@@ -110,7 +114,7 @@
       }
       ctx.beginPath();
       ctx.arc(n.x, n.y, n.r, 0, 6.283185);
-      ctx.fillStyle = `rgba(${CONFIG.nodeColor},0.9)`;
+      ctx.fillStyle = `rgba(${n.color},0.9)`;
       ctx.fill();
     }
 
@@ -128,30 +132,33 @@
           ctx.beginPath();
           ctx.moveTo(a.x, a.y);
           ctx.lineTo(b.x, b.y);
-          ctx.strokeStyle = `rgba(${CONFIG.linkColor},${alpha})`;
+          ctx.strokeStyle = `rgba(${CONFIG.link},${alpha})`;
           ctx.stroke();
-          links.push(a, b); // remember close pairs for pulse spawning
+          links.push(a, b);
         }
       }
     }
 
-    // spawn at most one pulse per frame, on a random existing link
+    // spawn at most one pulse per frame on a random existing link
     if (!reduced && links.length && pulses.length < CONFIG.maxPulses &&
         Math.random() < CONFIG.pulseSpawn) {
       const k = (Math.floor(Math.random() * (links.length / 2)) | 0) * 2;
-      pulses.push({ a: links[k], b: links[k + 1], t: 0 });
+      const from = links[k];
+      pulses.push({ a: from, b: links[k + 1], t: 0, color: from.color });
     }
 
-    // draw + advance pulses
+    // draw + advance pulses — travel the FULL link, only fading at the very end
     for (let i = pulses.length - 1; i >= 0; i--) {
       const p = pulses[i];
-      p.t += 0.02;
-      if (p.t > 1) { pulses.splice(i, 1); continue; }
+      p.t += CONFIG.pulseSpeed;
+      if (p.t >= 1) { pulses.splice(i, 1); continue; }
       const x = p.a.x + (p.b.x - p.a.x) * p.t;
       const y = p.a.y + (p.b.y - p.a.y) * p.t;
+      // bright most of the way; fade in over first 10% and out over last 15%
+      const alpha = Math.min(1, p.t / 0.1, (1 - p.t) / 0.15);
       ctx.beginPath();
-      ctx.arc(x, y, 2.2 * dpr, 0, 6.283185);
-      ctx.fillStyle = `rgba(${CONFIG.pulseColor},${1 - p.t})`;
+      ctx.arc(x, y, 2.4 * dpr, 0, 6.283185);
+      ctx.fillStyle = `rgba(${p.color},${alpha})`;
       ctx.fill();
     }
 

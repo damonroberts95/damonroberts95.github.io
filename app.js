@@ -12,6 +12,30 @@
 // fill in the year in the footer
 document.getElementById("year").textContent = new Date().getFullYear();
 
+// ---- copy-email button + toast ----
+(function () {
+  const btn = document.getElementById("copy-email");
+  const toast = document.getElementById("toast");
+  if (!btn) return;
+  let timer;
+  function showToast(msg) {
+    if (!toast) return;
+    toast.textContent = msg;
+    toast.classList.add("is-visible");
+    clearTimeout(timer);
+    timer = setTimeout(() => toast.classList.remove("is-visible"), 2000);
+  }
+  btn.addEventListener("click", async () => {
+    const email = btn.dataset.email;
+    try {
+      await navigator.clipboard.writeText(email);
+      showToast("Email copied ✓");
+    } catch {
+      window.location.href = "mailto:" + email; // fallback if clipboard blocked
+    }
+  });
+})();
+
 const list = document.getElementById("posts");
 
 fetch("posts/index.json")

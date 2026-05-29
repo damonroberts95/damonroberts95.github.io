@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<!-- Source for og.png. Render at 1200x630 and screenshot to og.png:
+     (see scripts note in README). Not linked from the site. -->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
+  <link href="https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=general-sans@400,500&display=swap" rel="stylesheet" />
+  <style>
+    * { margin: 0; box-sizing: border-box; }
+    html, body { width: 1200px; height: 630px; overflow: hidden; }
+    body {
+      position: relative;
+      background:
+        radial-gradient(135% 66% at 50% 124%, rgba(255,240,105,0.62), transparent 58%),
+        radial-gradient(120% 64% at 26% 112%, rgba(255,140,70,0.54), transparent 57%),
+        radial-gradient(128% 74% at 74% 98%, rgba(255,86,200,0.46), transparent 60%),
+        radial-gradient(122% 96% at 84% 4%, rgba(180,90,246,0.50), transparent 60%),
+        radial-gradient(100% 82% at 16% -4%, rgba(120,196,255,0.30), transparent 56%),
+        #08070d;
+      font-family: "General Sans", system-ui, sans-serif;
+      color: #f4f2fb;
+      padding: 90px 96px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .eyebrow {
+      font-size: 26px; letter-spacing: 0.18em; text-transform: uppercase;
+      color: #cfc9e6; margin-bottom: 28px;
+    }
+    h1 {
+      font-family: "Clash Display", sans-serif; font-weight: 700;
+      font-size: 150px; line-height: 0.9; letter-spacing: -0.02em;
+    }
+    .grad {
+      background: linear-gradient(110deg,#22d3ee,#a855f7 28%,#ec4899 52%,#f97316 74%,#facc15 92%);
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+    }
+    p.tag {
+      margin-top: 36px; font-size: 34px; line-height: 1.4; max-width: 22ch; color: #d6d2ea;
+    }
+    .url {
+      position: absolute; bottom: 64px; right: 96px;
+      font-size: 26px; letter-spacing: 0.04em; color: #cfc9e6;
+    }
+  </style>
+</head>
+<body>
+  <div class="eyebrow">// presales engineer &middot; iiot &middot; uk</div>
+  <h1>DAMON<br /><span class="grad">ROBERTS</span></h1>
+  <p class="tag">IIoT hardware &amp; software &mdash; energy &amp; manufacturing.</p>
+  <div class="url">damonroberts.co.uk</div>
+</body>
+</html>
