@@ -1,0 +1,250 @@
+/* ============================================================
+   Damon Roberts — site styles
+   ------------------------------------------------------------
+   Sections in this file:
+     1. Variables   (colours, fonts — EDIT COLOURS HERE)
+     2. Base        (resets, body, background field, grain)
+     3. Layout      (page wrapper)
+     4. Hero        (name, tagline, contact links)
+     5. Writing     (posts list)
+     6. Footer
+     7. Animations  (reveal on load, blob motion)
+     8. Responsive  (small screens)
+   ============================================================ */
+
+/* ---------- 1. VARIABLES — edit colours/fonts here ---------- */
+:root {
+  --bg:        #08070d;   /* page background (near-black) */
+  --bg-soft:   #11101a;   /* raised surfaces (link cards)  */
+  --text:      #f4f2fb;   /* main text */
+  --muted:     #8b88a0;   /* dimmed text */
+  --line:      #221f31;   /* hairlines / borders */
+
+  /* the gradient accent — used on name + hovers */
+  --grad: linear-gradient(110deg, #a855f7 0%, #ec4899 50%, #f97316 100%);
+  --accent: #ec4899;      /* solid fallback accent */
+
+  --font-display: "Clash Display", sans-serif;
+  --font-body:    "General Sans", system-ui, sans-serif;
+
+  --maxw: 760px;          /* content max width */
+}
+
+/* ---------- 2. BASE ---------- */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+}
+
+a { color: inherit; text-decoration: none; }
+
+/* Animated gradient field — three soft blobs drifting behind content */
+.field {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  overflow: hidden;
+}
+.blob {
+  position: absolute;
+  width: 46vw;
+  height: 46vw;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.55;
+  will-change: transform;
+}
+.blob-1 { background: #7c3aed; top: -10%;  left: -8%;  animation: drift1 22s ease-in-out infinite; }
+.blob-2 { background: #db2777; top: 30%;   right: -12%; animation: drift2 26s ease-in-out infinite; }
+.blob-3 { background: #ea580c; bottom: -15%; left: 25%;  animation: drift3 30s ease-in-out infinite; opacity: 0.4; }
+
+/* Fine grain overlay for texture (pure CSS, no image) */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.04;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ---------- 3. LAYOUT ---------- */
+.wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: clamp(3rem, 10vh, 7rem) 1.5rem 3rem;
+}
+
+/* ---------- 4. HERO ---------- */
+.hero { margin-bottom: 5rem; }
+
+.eyebrow {
+  font-size: 0.8rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 1.4rem;
+}
+
+.name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 0.92;
+  letter-spacing: -0.02em;
+  font-size: clamp(3.5rem, 16vw, 8.5rem);
+  margin-bottom: 1.5rem;
+}
+.name .line { display: block; }
+
+/* gradient-filled text for the surname */
+.line--grad {
+  background: var(--grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  background-size: 200% auto;
+  animation: shimmer 8s linear infinite;
+}
+
+.tagline {
+  font-size: clamp(1.1rem, 2.5vw, 1.4rem);
+  color: var(--muted);
+  max-width: 30ch;
+  margin-bottom: 3rem;
+}
+
+/* Contact links — stacked cards */
+.links { display: flex; flex-direction: column; gap: 0.6rem; }
+
+.link {
+  display: grid;
+  grid-template-columns: 7rem 1fr auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.1rem 1.3rem;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  transition: transform 0.25s ease, border-color 0.25s ease, background 0.25s ease;
+}
+.link:hover {
+  transform: translateX(6px);
+  border-color: transparent;
+  background:
+    linear-gradient(var(--bg-soft), var(--bg-soft)) padding-box,
+    var(--grad) border-box;
+  border: 1px solid transparent;
+}
+.link__label {
+  font-size: 0.75rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.link__val { font-weight: 500; }
+.link__arrow {
+  font-size: 1.1rem;
+  color: var(--muted);
+  transition: transform 0.25s ease, color 0.25s ease;
+}
+.link:hover .link__arrow { transform: translate(3px, -3px); color: var(--accent); }
+
+/* ---------- 5. WRITING ---------- */
+.writing { margin-bottom: 5rem; }
+.writing__head {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  margin-bottom: 1.8rem;
+}
+.writing__head h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.4rem;
+}
+.writing__rule {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.posts { list-style: none; }
+.posts__empty { color: var(--muted); font-size: 0.95rem; }
+
+.post-item a {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.4rem 1rem;
+  padding: 1.2rem 0;
+  border-bottom: 1px solid var(--line);
+  transition: padding-left 0.25s ease;
+}
+.post-item a:hover { padding-left: 0.6rem; }
+.post-item__title { font-size: 1.15rem; font-weight: 500; transition: color 0.25s ease; }
+.post-item a:hover .post-item__title { color: var(--accent); }
+.post-item__date { font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.post-item__summary { flex-basis: 100%; color: var(--muted); font-size: 0.95rem; }
+
+/* ---------- 6. FOOTER ---------- */
+.foot {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+  padding-top: 2rem;
+  border-top: 1px solid var(--line);
+}
+
+/* ---------- 7. ANIMATIONS ---------- */
+/* staggered reveal on page load — uses --d as the step index */
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  animation: rise 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+  animation-delay: calc(var(--d) * 0.09s);
+}
+@keyframes rise {
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  to { background-position: 200% center; }
+}
+@keyframes drift1 {
+  0%,100% { transform: translate(0,0) scale(1); }
+  50%     { transform: translate(12vw, 8vh) scale(1.15); }
+}
+@keyframes drift2 {
+  0%,100% { transform: translate(0,0) scale(1); }
+  50%     { transform: translate(-10vw, 12vh) scale(1.1); }
+}
+@keyframes drift3 {
+  0%,100% { transform: translate(0,0) scale(1); }
+  50%     { transform: translate(8vw, -10vh) scale(1.2); }
+}
+
+/* respect users who prefer no motion */
+@media (prefers-reduced-motion: reduce) {
+  .reveal { animation: none; opacity: 1; transform: none; }
+  .blob, .line--grad { animation: none; }
+}
+
+/* ---------- 8. RESPONSIVE ---------- */
+@media (max-width: 540px) {
+  body { font-size: 16px; }
+  .link { grid-template-columns: 1fr auto; }
+  .link__label { display: none; }   /* hide the small label on phones */
+}

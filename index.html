@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Damon Roberts</title>
+  <meta name="description" content="Damon Roberts — TAGLINE_PLACEHOLDER" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="Damon Roberts" />
+  <meta property="og:description" content="TAGLINE_PLACEHOLDER" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://damonroberts.co.uk" />
+
+  <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
+  <link href="https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=general-sans@400,500,600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- animated gradient field -->
+  <div class="field" aria-hidden="true">
+    <span class="blob blob-1"></span>
+    <span class="blob blob-2"></span>
+    <span class="blob blob-3"></span>
+  </div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <main class="wrap">
+    <header class="hero">
+      <p class="eyebrow reveal" style="--d:0">// based in the uk</p>
+      <h1 class="name">
+        <span class="line reveal" style="--d:1">DAMON</span>
+        <span class="line line--grad reveal" style="--d:2">ROBERTS</span>
+      </h1>
+      <p class="tagline reveal" style="--d:3">TAGLINE_PLACEHOLDER</p>
+
+      <nav class="links reveal" style="--d:4" aria-label="Contact">
+        <a class="link" href="mailto:EMAIL_PLACEHOLDER">
+          <span class="link__label">Email</span>
+          <span class="link__val">EMAIL_PLACEHOLDER</span>
+          <span class="link__arrow">&#8599;</span>
+        </a>
+        <a class="link" href="https://github.com/damonroberts95" target="_blank" rel="noopener">
+          <span class="link__label">GitHub</span>
+          <span class="link__val">@damonroberts95</span>
+          <span class="link__arrow">&#8599;</span>
+        </a>
+        <a class="link" href="LINKEDIN_PLACEHOLDER" target="_blank" rel="noopener">
+          <span class="link__label">LinkedIn</span>
+          <span class="link__val">in/damonroberts</span>
+          <span class="link__arrow">&#8599;</span>
+        </a>
+      </nav>
+    </header>
+
+    <section class="writing reveal" style="--d:5" aria-labelledby="writing-h">
+      <div class="writing__head">
+        <h2 id="writing-h">Writing</h2>
+        <span class="writing__rule"></span>
+      </div>
+      <ul id="posts" class="posts">
+        <li class="posts__empty">Loading&#8230;</li>
+      </ul>
+    </section>
+
+    <footer class="foot">
+      <span>&copy; <span id="year"></span> Damon Roberts</span>
+      <span class="foot__dot">&middot;</span>
+      <span>damonroberts.co.uk</span>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
