@@ -185,6 +185,24 @@
   });
   addEventListener("pointerleave", () => { mouse.active = false; });
 
+  // click background → shove nearby nodes outward from the cursor
+  addEventListener("pointerdown", (e) => {
+    if (reduced) return;
+    const cx = e.clientX * dpr, cy = e.clientY * dpr;
+    const radius = 140 * dpr, r2 = radius * radius;
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      const dx = n.x - cx, dy = n.y - cy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < r2 && d2 > 0.01) {
+        const inv = 1 / Math.sqrt(d2);
+        const force = (1 - d2 / r2) * 2 * dpr; // closer → harder shove
+        n.vx += dx * inv * force;
+        n.vy += dy * inv * force;
+      }
+    }
+  });
+
   resize();
   requestAnimationFrame(step); // animates, or draws one frame if reduced-motion
 })();
