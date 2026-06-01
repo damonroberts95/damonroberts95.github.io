@@ -221,7 +221,6 @@
   // touch devices: smaller arena is harder, so ease difficulty, float the
   // player above the fingertip, and shorten the webs
   const MOBILE = window.matchMedia("(pointer: coarse)").matches;
-  const TOUCH_OFFSET = 42;
   const LINK_SCALE = MOBILE ? 0.78 : 1;
 
   let w, h, dpr = 1, linkD2;
@@ -239,13 +238,31 @@
   // player follows the pointer; start centred
   // px/py = previous frame position, vx/vy = velocity (drives ambush/predict)
   const player = { x: w / 2, y: h / 2, px: w / 2, py: h / 2, vx: 0, vy: 0, r: 7 * dpr };
+  let anchor = null; // touch: where the finger + player were when the drag began
+  const clamp01 = (v, hi) => (v < 0 ? 0 : v > hi ? hi : v);
+
+  function startTouch(e) {
+    const t = e.touches ? e.touches[0] : e;
+    if (!t) return;
+    anchor = (e.touches || e.pointerType === "touch")
+      ? { fx: t.clientX * dpr, fy: t.clientY * dpr, px: player.x, py: player.y }
+      : null;
+  }
   function movePointer(e) {
     const t = e.touches ? e.touches[0] : e;
     if (!t) return;
     const isTouch = !!e.touches || e.pointerType === "touch";
-    player.x = t.clientX * dpr;
-    player.y = t.clientY * dpr - (isTouch ? TOUCH_OFFSET * dpr : 0);
+    if (isTouch && anchor) {
+      // relative: move the player by the finger's delta from where the drag started
+      player.x = clamp01(anchor.px + (t.clientX * dpr - anchor.fx), w);
+      player.y = clamp01(anchor.py + (t.clientY * dpr - anchor.fy), h);
+    } else {
+      player.x = t.clientX * dpr;
+      player.y = t.clientY * dpr;
+    }
   }
+  addEventListener("pointerdown", startTouch, { passive: true });
+  addEventListener("touchstart", startTouch, { passive: true });
   addEventListener("pointermove", movePointer, { passive: true });
   addEventListener("touchmove", movePointer, { passive: true });
 
