@@ -41,7 +41,7 @@
     "34,211,238", "255,138,96", "255,248,120",
   ];
   const LINK = "199,116,232";
-  const LINK_DIST = 108;   // tight webs
+  const LINK_DIST = 94;    // web length (scaled down further on mobile)
   const LINK_W = 3.5;   // px: drawn web thickness
   const LETHAL = 6;     // px: extra kill-band around the web line + node
   const JOLT_R = 70;    // px: crowding radius
@@ -218,6 +218,12 @@
     };
   }
 
+  // touch devices: smaller arena is harder, so ease difficulty, float the
+  // player above the fingertip, and shorten the webs
+  const MOBILE = window.matchMedia("(pointer: coarse)").matches;
+  const TOUCH_OFFSET = 42;
+  const LINK_SCALE = MOBILE ? 0.78 : 1;
+
   let w, h, dpr = 1, linkD2;
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 1.5);
@@ -225,19 +231,20 @@
     h = canvas.height = Math.floor(innerHeight * dpr);
     canvas.style.width = innerWidth + "px";
     canvas.style.height = innerHeight + "px";
-    linkD2 = (LINK_DIST * dpr) ** 2;
+    linkD2 = (LINK_DIST * LINK_SCALE * dpr) ** 2;
   }
   resize();
   addEventListener("resize", resize);
 
-  // player follows the pointer exactly; start centred
+  // player follows the pointer; start centred
   // px/py = previous frame position, vx/vy = velocity (drives ambush/predict)
   const player = { x: w / 2, y: h / 2, px: w / 2, py: h / 2, vx: 0, vy: 0, r: 7 * dpr };
   function movePointer(e) {
     const t = e.touches ? e.touches[0] : e;
     if (!t) return;
+    const isTouch = !!e.touches || e.pointerType === "touch";
     player.x = t.clientX * dpr;
-    player.y = t.clientY * dpr;
+    player.y = t.clientY * dpr - (isTouch ? TOUCH_OFFSET * dpr : 0);
   }
   addEventListener("pointermove", movePointer, { passive: true });
   addEventListener("touchmove", movePointer, { passive: true });
@@ -400,9 +407,11 @@
     player.px = player.x; player.py = player.y;
 
     // difficulty ramps with time: more hunters fast, slightly slower speed
-    const maxSpeed = (90 + elapsed * 4) * dpr;    // px/sec
-    const accel = (220 + elapsed * 9) * dpr;      // homing strength (chase the cursor)
-    const targetCount = Math.min(100, 6 + Math.floor(elapsed * 1)); // builds gently
+    const sp = MOBILE ? 0.78 : 1;                 // ease speed on small screens
+    const maxSpeed = (90 + elapsed * 4) * dpr * sp;
+    const accel = (220 + elapsed * 9) * dpr * sp; // homing strength (chase the cursor)
+    const cap = MOBILE ? 45 : 100, rate = MOBILE ? 0.6 : 1; // fewer nodes, slower build on mobile
+    const targetCount = Math.min(cap, 6 + Math.floor(elapsed * rate));
     while (hunters.length < targetCount) spawnHunter();
 
     // spawn a rainbow star now and then; collect it by touching it
@@ -800,10 +809,11 @@
     }
 
     // links — dark underlay first so they stay visible over the bright yellow wash,
-    // then the colour on top (built by physics; no second O(n²) pass)
+    // then the colour on top. Both alphas track proximity (lk.al) so a link
+    // fades in as nodes approach instead of flashing on at the threshold.
     ctx.lineWidth = (LINK_W + 2.5) * dpr;
-    ctx.strokeStyle = "rgba(6,5,12,0.5)";
     for (const lk of links) {
+      ctx.strokeStyle = `rgba(6,5,12,${lk.al * 0.5})`;
       ctx.beginPath(); ctx.moveTo(lk.a.x, lk.a.y); ctx.lineTo(lk.b.x, lk.b.y); ctx.stroke();
     }
     ctx.lineWidth = LINK_W * dpr;
