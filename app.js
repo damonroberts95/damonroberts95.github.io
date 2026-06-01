@@ -59,13 +59,16 @@ document.getElementById("year").textContent = new Date().getFullYear();
     egg.style.transform = `translate(${dx}px, ${dy}px)`;
     if (moved > 46) { dragging = false; go(); } // dragged far enough → launch
   });
+  const spring = () => { egg.style.transition = "transform .25s ease"; egg.style.transform = ""; };
   egg.addEventListener("pointerup", () => {
     if (!dragging) return;
     dragging = false;
-    egg.style.transition = "transform .25s ease";
-    egg.style.transform = "";
+    spring();
     if (moved < 8) go(); // a tap counts too
   });
+  // gesture cancelled / capture lost → still spring the D back (was getting stuck)
+  egg.addEventListener("pointercancel", () => { if (dragging) { dragging = false; spring(); } });
+  egg.addEventListener("lostpointercapture", () => { if (dragging) { dragging = false; spring(); } });
 })();
 
 const list = document.getElementById("posts");
