@@ -207,6 +207,9 @@
           [0, 7, 12, 19].forEach((iv, i) => { const f = mtof(96 - iv); synth(f, t + i * 0.05, 0.7 - i * 0.1, { type: "sine", gain: 0.16, detune: 5, voices: 2, glide: f * 0.5, cut: 9000, q: 1, dest: fx }); });
         } else if (name === "death") {        // detuned saw fall, filter slams shut
           synth(330, t, 1.1, { gain: 0.4, detune: 26, voices: 3, glide: 48, cut: 2800, q: 6, sub: true, dest: fx });
+        } else if (name === "shield") {       // bright rising power-up chord
+          [60, 64, 67, 72].forEach((m, i) => synth(mtof(m), t + i * 0.05, 0.45, { type: "sawtooth", gain: 0.28, detune: 10, voices: 2, cut: 3200, q: 3, dest: fx }));
+          synth(mtof(79), t + 0.22, 0.5, { type: "sine", gain: 0.22, detune: 4, voices: 2, cut: 8500, dest: fx });
         } else if (name === "start") {        // warm chord stab
           [57, 64, 69].forEach((m) => synth(mtof(m), t, 0.45, { gain: 0.16, detune: 12, voices: 2, cut: 1200, q: 4, attack: 0.02, dest: fx }));
         } else if (name === "pop") {
@@ -488,7 +491,7 @@
     if (shield) {
       const dx = player.x - shield.x, dy = player.y - shield.y, reach = STAR_R * dpr + player.r;
       if (dx * dx + dy * dy < reach * reach) {
-        shieldActive = true; audio.setShield(true);
+        shieldActive = true; audio.setShield(true); audio.sfx("shield");
         shocks.push({ x: shield.x, y: shield.y, t: 0, max: 140 * dpr, shield: true });
         shield = null; nextShield = elapsed + 22 + Math.random() * 12;
       }
