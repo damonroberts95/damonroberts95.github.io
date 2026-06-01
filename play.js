@@ -799,10 +799,16 @@
       ctx.stroke();
     }
 
-    // links — drawn from the list physics already built (no second O(n²) pass)
+    // links — dark underlay first so they stay visible over the bright yellow wash,
+    // then the colour on top (built by physics; no second O(n²) pass)
+    ctx.lineWidth = (LINK_W + 2.5) * dpr;
+    ctx.strokeStyle = "rgba(6,5,12,0.5)";
+    for (const lk of links) {
+      ctx.beginPath(); ctx.moveTo(lk.a.x, lk.a.y); ctx.lineTo(lk.b.x, lk.b.y); ctx.stroke();
+    }
     ctx.lineWidth = LINK_W * dpr;
     for (const lk of links) {
-      const alpha = lk.al * (lk.same ? 0.85 : 0.4);
+      const alpha = lk.al * (lk.same ? 1 : 0.7);
       ctx.strokeStyle = `rgba(${lk.same ? lk.a.color : LINK},${alpha})`;
       ctx.beginPath(); ctx.moveTo(lk.a.x, lk.a.y); ctx.lineTo(lk.b.x, lk.b.y); ctx.stroke();
     }
