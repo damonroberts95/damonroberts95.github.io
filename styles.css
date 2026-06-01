@@ -147,6 +147,17 @@ body::after {
 }
 .name .line { display: block; }
 
+/* hidden easter-egg target — the "D" of DAMON. Looks identical to the
+   rest of the name; grab cursor is the only (subtle) hint. Drag/tap
+   launches NODE RUN (see app.js). */
+#egg {
+  display: inline-block;
+  cursor: grab;
+  touch-action: none;
+  will-change: transform;
+}
+#egg:active { cursor: grabbing; }
+
 /* gradient-filled text for the surname */
 /* "ROBERTS" — bright vaporwave gradient that flows through the palette */
 .line--grad {

@@ -36,6 +36,38 @@ document.getElementById("year").textContent = new Date().getFullYear();
   });
 })();
 
+// ---- hidden easter egg: the "D" of DAMON launches NODE RUN ----
+// desktop: click it. touch: drag it around (or tap).
+(function () {
+  const egg = document.getElementById("egg");
+  if (!egg) return;
+  const go = () => { window.location.href = "play.html"; };
+  let dragging = false, sx = 0, sy = 0, moved = 0;
+
+  egg.addEventListener("click", go); // mouse / keyboard-ish
+
+  egg.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse") return; // mouse handled by click
+    dragging = true; moved = 0; sx = e.clientX; sy = e.clientY;
+    egg.setPointerCapture(e.pointerId);
+    egg.style.transition = "none";
+  });
+  egg.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    moved = Math.hypot(dx, dy);
+    egg.style.transform = `translate(${dx}px, ${dy}px)`;
+    if (moved > 46) { dragging = false; go(); } // dragged far enough → launch
+  });
+  egg.addEventListener("pointerup", () => {
+    if (!dragging) return;
+    dragging = false;
+    egg.style.transition = "transform .25s ease";
+    egg.style.transform = "";
+    if (moved < 8) go(); // a tap counts too
+  });
+})();
+
 const list = document.getElementById("posts");
 
 fetch("posts/index.json")
