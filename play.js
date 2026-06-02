@@ -542,6 +542,7 @@
       waveType = "boss";
       themeColor = PALETTE[(Math.random() * PALETTE.length) | 0];
       spawnBoss(themeColor);
+      while (hunters.length < (MOBILE ? 12 : 18)) spawnHunter(); // a proper swarm alongside the boss
       sub = "BOSS · " + (PERSONA_NAME[themeColor] || "");
     } else {
       const roll = Math.random();
@@ -576,7 +577,7 @@
     audio.setBiome(L.biome);
     levelEndsAt = L.len;
     banner = { big: L.name, sub: themeColor ? PERSONA_NAME[themeColor] : "All colours", until: 2.4 };
-    if (L.boss) { boss = null; spawnBoss(themeColor || undefined); }
+    if (L.boss) { boss = null; spawnBoss(themeColor || undefined); while (hunters.length < (MOBILE ? 12 : 18)) spawnHunter(); }
   }
 
   // journey: a level's timer elapsed → next plot card, or the win screen
@@ -698,7 +699,7 @@
     // escalate speed/accel by progress: journey per level, waves per wave number
     // (both reset/segment elapsed, so this keeps the climb going across them)
     const diff = mode === "journey" ? 1 + journeyIdx * 0.045
-               : mode === "waves" ? 1 + (wave - 1) * 0.04
+               : mode === "waves" ? 1 + (wave - 1) * 0.025
                : 1;
     const maxSpeed = (90 + elapsed * (MOBILE ? 4 : 5)) * dpr * sp * arenaScale * diff;
     const accel = (220 + elapsed * (MOBILE ? 9 : 11)) * dpr * sp * arenaScale * diff; // homing strength (chase the cursor)
@@ -718,7 +719,8 @@
     // throttled right after a big kill.
     if (hunters.length < targetCount && elapsed >= nextSpawn) {
       spawnHunter();
-      nextSpawn = elapsed + (mode === "journey" ? 0.42 : SPAWN_GAP); // fill faster in journey
+      // journey fills faster, waves a bit slower (killed enemies don't snap back)
+      nextSpawn = elapsed + (mode === "journey" ? 0.42 : mode === "waves" ? 0.9 : SPAWN_GAP);
     }
 
     // spawn a rainbow star now and then; collect it by touching it
