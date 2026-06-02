@@ -356,7 +356,27 @@
     else if (edge === 1) { x = w + 30 * dpr; y = rand(0, h); }
     else if (edge === 2) { x = rand(0, w); y = h + 30 * dpr; }
     else { x = -30 * dpr; y = rand(0, h); }
-    boss = { x, y, vx: 0, vy: 0, r: 22 * dpr, t: 0 };
+    const color = PALETTE[(Math.random() * PALETTE.length) | 0];
+    boss = { x, y, vx: 0, vy: 0, r: 22 * dpr, t: 0, color };
+  }
+
+  // burst a cluster of same-colour nodes outward from a point (boss death → its swarm)
+  function popInto(x, y, color, count) {
+    for (let k = 0; k < count; k++) {
+      const r0 = rand(2.6, 4.4) * dpr;
+      const ang = rand(0, 6.283185), spd = rand(180, 420) * dpr;
+      hunters.push({
+        id: hunterId++,
+        x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+        r: r0, r0,
+        color,
+        p: PERSONA[color],
+        seed: rand(0, 6.283185),
+        joltCd: 0, age: 0,
+        life: rand(35, 60),
+        safe: elapsed + 0.6, // can't kill the player for a beat after popping out
+      });
+    }
   }
 
   // a lethal touch — consumed by shield + i-frames; returns true if it kills
@@ -365,10 +385,10 @@
     if (shieldActive) {
       shieldActive = false; audio.setShield(false);
       invulnUntil = elapsed + 1.3;
-      shocks.push({ x: player.x, y: player.y, t: 0, max: 200 * dpr, shield: true });
-      for (const hn of hunters) { // shove the swarm off
+      shocks.push({ x: player.x, y: player.y, t: 0, max: 300 * dpr, shield: true });
+      for (const hn of hunters) { // shove the swarm off — wider, harder pop
         const dx = hn.x - player.x, dy = hn.y - player.y, d = Math.hypot(dx, dy) || 1;
-        if (d < 220 * dpr) { const k = 560 * dpr; hn.vx += (dx / d) * k; hn.vy += (dy / d) * k; }
+        if (d < 320 * dpr) { const k = 780 * dpr; hn.vx += (dx / d) * k; hn.vy += (dy / d) * k; }
       }
       audio.sfx("freeze");
       return false;
@@ -577,9 +597,11 @@
       }
       } // end !frozen
 
-      // collision with the real player → caught (frozen hunters still kill on contact)
+      // collision with the real player → caught (frozen hunters still kill on contact).
+      // freshly-popped boss nodes get a brief safe window so they can't instakill.
       const rr = hn.r + player.r;
-      if (pdx * pdx + pdy * pdy < rr * rr && takeHit()) { drawScene(); gameOver(); return; }
+      const armed = !hn.safe || elapsed > hn.safe;
+      if (armed && pdx * pdx + pdy * pdy < rr * rr && takeHit()) { drawScene(); gameOver(); return; }
     }
     hunters = hunters.filter((h) => !h.dead);
 
@@ -760,21 +782,47 @@
     ctx.shadowBlur = 0;
   }
 
-  // boss — big dark orb, bright shifting rim + glow, pulsing
+  // boss — big menacing spiked orb with a glaring eye, in its own colour.
+  // Deliberately unlike the small glowy powerup icons: spiky, dark-bodied, an eye.
   function drawBoss() {
-    const pulse = 1 + Math.sin(boss.t * 4) * 0.06;
+    const c = boss.color;
+    const pulse = 1 + Math.sin(boss.t * 4) * 0.08;
     const R = boss.r * pulse;
-    const hue = (boss.t * 80) % 360;
     ctx.save();
-    ctx.shadowColor = `hsl(${hue},90%,60%)`; ctx.shadowBlur = 26 * dpr;
-    ctx.fillStyle = "rgba(12,8,20,0.95)";
-    ctx.beginPath(); ctx.arc(boss.x, boss.y, R, 0, 6.283185); ctx.fill();
+    ctx.translate(boss.x, boss.y);
+
+    // rotating spiked corona — jagged star, clearly a threat not a pickup
+    ctx.rotate(boss.t * 0.8);
+    ctx.shadowColor = `rgba(${c},0.95)`; ctx.shadowBlur = 30 * dpr;
+    ctx.fillStyle = `rgba(${c},0.9)`;
+    const spikes = 12;
+    ctx.beginPath();
+    for (let i = 0; i < spikes * 2; i++) {
+      const ang = (Math.PI / spikes) * i;
+      const rad = i % 2 ? R * 1.55 : R * 1.05;
+      const x = Math.cos(ang) * rad, y = Math.sin(ang) * rad;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.rotate(-boss.t * 0.8);
     ctx.shadowBlur = 0;
-    ctx.lineWidth = 3 * dpr;
-    ctx.strokeStyle = `hsl(${hue},100%,68%)`;
-    ctx.beginPath(); ctx.arc(boss.x, boss.y, R, 0, 6.283185); ctx.stroke();
-    ctx.fillStyle = `hsla(${hue},100%,75%,0.9)`;
-    ctx.beginPath(); ctx.arc(boss.x, boss.y, R * 0.3, 0, 6.283185); ctx.fill();
+
+    // dark body + bright colour rim
+    ctx.fillStyle = "rgba(10,6,16,0.97)";
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, 6.283185); ctx.fill();
+    ctx.lineWidth = 3 * dpr; ctx.strokeStyle = `rgba(${c},1)`;
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, 6.283185); ctx.stroke();
+
+    // glaring eye — glowing iris that follows the player, dark pupil
+    const eye = R * (0.34 + Math.sin(boss.t * 6) * 0.05);
+    const look = Math.atan2(player.y - boss.y, player.x - boss.x);
+    const ox = Math.cos(look) * R * 0.22, oy = Math.sin(look) * R * 0.22;
+    ctx.shadowColor = `rgba(${c},0.95)`; ctx.shadowBlur = 18 * dpr;
+    ctx.fillStyle = `rgba(${c},0.95)`;
+    ctx.beginPath(); ctx.arc(0, 0, eye, 0, 6.283185); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(8,5,14,0.95)";
+    ctx.beginPath(); ctx.arc(ox, oy, eye * 0.5, 0, 6.283185); ctx.fill();
     ctx.restore();
   }
 
@@ -844,11 +892,11 @@
         });
         const killed = before - hunters.length;
         if (killed) { points += killed * KILL_VAL; ptsEl.textContent = String(points); }
-        // the wave also destroys the boss → littles + bonus
+        // the wave also destroys the boss → pops into a swarm of its own colour + bonus
         if (boss) {
           const dx = boss.x - s.x, dy = boss.y - s.y;
           if (dx * dx + dy * dy <= r2) {
-            for (let k = 0; k < 8; k++) spawnHunter();
+            popInto(boss.x, boss.y, boss.color, 8);
             points += BOSS_VAL; ptsEl.textContent = String(points);
             shocks.push({ x: boss.x, y: boss.y, t: 0, max: 160 * dpr });
             boss = null;
