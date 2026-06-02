@@ -829,7 +829,7 @@
         // each personality aims at a different target point
         let tx = player.x, ty = player.y;
         if (p.kind === "ambush") {            // Pinky: lead further ahead of the player
-          tx = player.x + player.vx * 0.7; ty = player.y + player.vy * 0.7;
+          tx = player.x + player.vx * 1.3; ty = player.y + player.vy * 1.3;
         } else if (p.kind === "erratic") {    // Inky: wide, fast wobble orbit
           const a = hn.age * 3.2 + hn.seed;
           tx = player.x + Math.cos(a) * 210 * dpr; ty = player.y + Math.sin(a * 1.25) * 210 * dpr;
@@ -876,7 +876,7 @@
         const p = boss.p;
         let tx = player.x, ty = player.y;             // default: straight chase
         if (p.kind === "ambush") {                    // lead the player's motion
-          tx = player.x + player.vx * 0.7; ty = player.y + player.vy * 0.7;
+          tx = player.x + player.vx * 1.3; ty = player.y + player.vy * 1.3;
         } else if (p.kind === "erratic") {            // wobble orbit around the player
           const a = boss.t * 2.4 + boss.seed;
           tx = player.x + Math.cos(a) * 200 * dpr; ty = player.y + Math.sin(a * 1.25) * 200 * dpr;
