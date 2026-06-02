@@ -1322,7 +1322,7 @@
       : (journeyIdx + 1) + "/" + JOURNEY.length + "  ·  " + (JOURNEY[journeyIdx] ? JOURNEY[journeyIdx].name : "");
     ctx.font = `600 ${13 * uiScale}px "General Sans", system-ui, sans-serif`;
     ctx.fillStyle = "rgba(255,255,255,0.45)";
-    ctx.fillText(label.toUpperCase(), w / 2, 56 * uiScale);
+    ctx.fillText(label.toUpperCase(), w / 2, 78 * dpr); // sit below the HUD row (score), not over it
     if (banner && elapsed < banner.until) {
       const k = Math.min(1, (banner.until - elapsed) / 0.5, (elapsed - (banner.until - 2.4)) / 0.4 + 0.0001);
       const a = Math.max(0, Math.min(1, k));
