@@ -687,7 +687,11 @@
     const maxSpeed = (90 + elapsed * (MOBILE ? 4 : 5)) * dpr * sp * arenaScale;
     const accel = (220 + elapsed * (MOBILE ? 9 : 11)) * dpr * sp * arenaScale; // homing strength (chase the cursor)
     const cap = Math.round((MOBILE ? 32 : 130) * arenaScale), rate = MOBILE ? 0.6 : 1.15; // more nodes on bigger arenas
-    let targetCount = Math.min(cap, 6 + Math.floor(elapsed * rate));
+    // Journey resets elapsed each level, so it would re-ramp from sparse every time.
+    // Start fuller, ramp faster, and escalate the floor with the level number.
+    const jBase = mode === "journey" ? 6 + journeyIdx : 0;
+    const jRate = mode === "journey" ? 1.5 : 1;
+    let targetCount = Math.min(cap, 6 + jBase + Math.floor(elapsed * rate * jRate));
     if (bossWave) targetCount = Math.min(targetCount, MOBILE ? 14 : 22); // thin the swarm so the boss is the threat
     else if (waveType === "special") targetCount = Math.min(targetCount, MOBILE ? 18 : 30); // calmer reward wave
     // nodes swell the longer you survive → bigger targets, harder dodging (capped at 3x)
@@ -698,7 +702,7 @@
     // throttled right after a big kill.
     if (hunters.length < targetCount && elapsed >= nextSpawn) {
       spawnHunter();
-      nextSpawn = elapsed + SPAWN_GAP;
+      nextSpawn = elapsed + (mode === "journey" ? 0.42 : SPAWN_GAP); // fill faster in journey
     }
 
     // spawn a rainbow star now and then; collect it by touching it
