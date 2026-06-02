@@ -77,6 +77,7 @@
 
   // score = 1 point per second survived + 10 per gem; best is the high score.
   // best is tracked per mode; classic keeps the original key for continuity.
+  let mode = "classic"; // declared early: bestKey() reads it during initial loadBest()
   const bestKey = () => (mode === "classic" ? "noderun-best-score" : "noderun-best-score-" + mode);
   const loadBest = () => { best = parseFloat(localStorage.getItem(bestKey()) || "0") || 0; bestEl.textContent = best.toFixed(1); };
   let best = 0;
@@ -235,8 +236,9 @@
   const LINK_SCALE = MOBILE ? 0.6 : 1;   // shorter webs on small screens → fewer lethal lines, more gaps
   const GROUP_SCALE = MOBILE ? 0.7 : 1;  // tighter clumps on small screens → nodes ball up, opening dodge lanes
 
-  let w, h, dpr = 1, linkD2, arenaScale = 1;
+  let w, h, dpr = 1, linkD2, arenaScale = 1, uiScale = 1;
   function resize() {
+    const oldW = w, oldH = h;
     dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     w = canvas.width = Math.floor(innerWidth * dpr);
     h = canvas.height = Math.floor(innerHeight * dpr);
@@ -247,6 +249,23 @@
     // motion and web reach with the viewport so difficulty stays consistent.
     arenaScale = Math.max(0.8, Math.min(2, Math.min(innerWidth, innerHeight) / 820));
     linkD2 = (LINK_DIST * LINK_SCALE * arenaScale * dpr) ** 2;
+    // on-canvas UI (banner/labels) sized off DEVICE dimensions, not dpr, so it stays
+    // a sensible physical size when zoomed out (where dpr shrinks but the screen doesn't).
+    uiScale = Math.max(0.9, Math.min(2, Math.min(w, h) / 780));
+    if (player) player.r = 7 * dpr;
+    // remap every position to the new dimensions so a mid-run zoom/resize doesn't
+    // throw entities out of the (rescaled) coordinate space and break the game.
+    if (oldW && oldH && (oldW !== w || oldH !== h)) {
+      const sx = w / oldW, sy = h / oldH;
+      const sc = (o) => { if (o) { o.x *= sx; o.y *= sy; } };
+      sc(player); player.px *= sx; player.py *= sy;
+      for (const hn of hunters) { hn.x *= sx; hn.y *= sy; }
+      for (const g of gems) { g.x *= sx; g.y *= sy; }
+      for (const bl of bullets) { bl.x *= sx; bl.y *= sy; }
+      for (const s of shocks) { s.x *= sx; s.y *= sy; }
+      sc(star); sc(ice); sc(shield); sc(shooter); sc(boss);
+      if (anchor) { anchor.fx *= sx; anchor.fy *= sy; anchor.px *= sx; anchor.py *= sy; }
+    }
   }
   resize();
   addEventListener("resize", resize);
@@ -315,7 +334,7 @@
   let boss = null, nextBoss = 0; // big slow hunter
 
   // ---- modes: classic (endless), waves (themed waves), journey (story levels) ----
-  let mode = "classic";
+  // `mode` is declared near the top (needed during initial loadBest()).
   let wave = 0, waveEndsAt = 0, waveType = "themed"; // waves mode
   let themeColor = null;            // dominant spawn colour this wave/level (null = all)
   let bossWave = false;             // current wave/level features the boss
@@ -1144,19 +1163,19 @@
     const label = mode === "waves"
       ? "WAVE " + wave + (biome ? "  ·  " + biome.name : "")
       : (journeyIdx + 1) + "/" + JOURNEY.length + "  ·  " + (JOURNEY[journeyIdx] ? JOURNEY[journeyIdx].name : "");
-    ctx.font = `600 ${12 * dpr}px "General Sans", system-ui, sans-serif`;
+    ctx.font = `600 ${13 * uiScale}px "General Sans", system-ui, sans-serif`;
     ctx.fillStyle = "rgba(255,255,255,0.45)";
-    ctx.fillText(label.toUpperCase(), w / 2, 70 * dpr);
+    ctx.fillText(label.toUpperCase(), w / 2, 56 * uiScale);
     if (banner && elapsed < banner.until) {
       const k = Math.min(1, (banner.until - elapsed) / 0.5, (elapsed - (banner.until - 2.4)) / 0.4 + 0.0001);
       const a = Math.max(0, Math.min(1, k));
       ctx.fillStyle = `rgba(255,255,255,${a})`;
-      ctx.font = `700 ${42 * dpr}px "Clash Display", system-ui, sans-serif`;
+      ctx.font = `700 ${44 * uiScale}px "Clash Display", system-ui, sans-serif`;
       ctx.fillText(banner.big, w / 2, h * 0.42);
       if (banner.sub) {
-        ctx.font = `600 ${17 * dpr}px "General Sans", system-ui, sans-serif`;
+        ctx.font = `600 ${18 * uiScale}px "General Sans", system-ui, sans-serif`;
         ctx.fillStyle = `rgba(200,220,255,${a * 0.85})`;
-        ctx.fillText(banner.sub, w / 2, h * 0.42 + 32 * dpr);
+        ctx.fillText(banner.sub, w / 2, h * 0.42 + 34 * uiScale);
       }
     }
     ctx.restore();
@@ -1278,11 +1297,11 @@
     if (mult > 1) {
       const hue = (elapsed * 240) % 360;
       ctx.save();
-      ctx.font = `700 ${30 * dpr}px "Clash Display", system-ui, sans-serif`;
+      ctx.font = `700 ${32 * uiScale}px "Clash Display", system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.shadowColor = `hsl(${hue},100%,60%)`; ctx.shadowBlur = 18 * dpr;
       ctx.fillStyle = `hsl(${hue},100%,66%)`;
-      ctx.fillText(`×${mult}`, w / 2, 96 * dpr);
+      ctx.fillText(`×${mult}`, w / 2, 84 * uiScale + 36 * uiScale);
       ctx.restore(); ctx.shadowBlur = 0;
     }
 
