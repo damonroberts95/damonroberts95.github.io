@@ -317,6 +317,7 @@
   const clamp01 = (v, hi) => (v < 0 ? 0 : v > hi ? hi : v);
 
   function startTouch(e) {
+    if (paused) { togglePause(); return; } // tap anywhere to resume
     const t = e.touches ? e.touches[0] : e;
     if (!t) return;
     anchor = (e.touches || e.pointerType === "touch")
@@ -346,7 +347,7 @@
   let links = []; // {a,b,al,same} built in physics, drawn in drawScene (one pass, not two)
   let linkAges = new Map();   // "idA|idB" -> seconds that web has existed
   const WEB_GRACE = 0.32;     // s: a freshly-formed web can't kill until it settles
-  let running = false, dead = false;
+  let running = false, dead = false, paused = false;
   let elapsed = 0, lastT = 0, startT = 0;
   let shocks = [];            // {x, y, t, max} expanding ring visuals
   let star = null;            // {x, y, t} collectable rainbow powerup (blast)
@@ -633,7 +634,7 @@
     winPanel.hidden = true;
     document.body.classList.add("playing"); // hide cursor mid-run
     playerAlpha = 0; // fade the player in
-    running = true;
+    running = true; paused = false; document.body.classList.remove("paused"); setPauseBtn();
     startT = -1; // stamp on first frame (no Date.now needed)
     requestAnimationFrame(loop);
   }
@@ -671,6 +672,12 @@
   function loop(now) {
     if (!running) return;
     if (startT < 0) { startT = now; lastT = now; }
+    if (paused) { // freeze elapsed (so it doesn't jump on resume), hold the frame, show overlay
+      startT += now - lastT; lastT = now;
+      drawScene(); drawPauseOverlay();
+      requestAnimationFrame(loop);
+      return;
+    }
     const dt = Math.min(0.05, (now - lastT) / 1000); // clamp big tab-switch gaps
     lastT = now;
     elapsed = (now - startT) / 1000;
@@ -1251,6 +1258,20 @@
     ctx.restore();
   }
 
+  function drawPauseOverlay() {
+    ctx.save();
+    ctx.fillStyle = "rgba(8,7,13,0.6)";
+    ctx.fillRect(0, 0, w, h);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(255,255,255,0.95)";
+    ctx.font = `700 ${48 * uiScale}px "Clash Display", system-ui, sans-serif`;
+    ctx.fillText("PAUSED", w / 2, h * 0.46);
+    ctx.fillStyle = "rgba(185,182,207,0.9)";
+    ctx.font = `500 ${15 * uiScale}px "General Sans", system-ui, sans-serif`;
+    ctx.fillText("press P / Space or tap to resume", w / 2, h * 0.46 + 34 * uiScale);
+    ctx.restore();
+  }
+
   function drawScene() {
     drawBiome();
     // expanding shockwave rings — yellow for cluster jolts, rainbow for star blast
@@ -1483,15 +1504,30 @@
   }
   // return to the mode-select menu from win/over/plot
   function backToMenu() {
-    running = false; dead = false;
+    running = false; dead = false; paused = false; setPauseBtn();
     overPanel.hidden = true; winPanel.hidden = true; plotPanel.hidden = true; helpPanel.hidden = true;
-    document.body.classList.remove("playing");
+    document.body.classList.remove("playing", "paused");
     startPanel.hidden = false;
     mode = "classic"; biome = null; banner = null; loadBest();
     reset(); idleFrame();
   }
 
+  // pause — freezes the run; cursor returns; resume via key/button/tap
+  const pauseBtn = document.getElementById("pause-btn");
+  function setPauseBtn() {
+    if (!pauseBtn) return;
+    pauseBtn.textContent = paused ? "▶" : "❚❚";
+    pauseBtn.setAttribute("aria-label", paused ? "resume" : "pause");
+  }
+  function togglePause() {
+    if (!running) return;
+    paused = !paused;
+    document.body.classList.toggle("paused", paused); // show the cursor while paused (keeps .playing → pause btn stays)
+    setPauseBtn();
+  }
+
   // controls
+  if (pauseBtn) pauseBtn.addEventListener("click", togglePause);
   document.querySelectorAll(".mode-btn").forEach((b) => b.addEventListener("click", () => chooseMode(b.dataset.mode)));
   document.getElementById("retry-btn").addEventListener("click", start);
   document.getElementById("plot-begin").addEventListener("click", start);
@@ -1508,7 +1544,8 @@
     if (!plotPanel.hidden) { if (e.key === "Enter" || e.key === " ") start(); else if (e.key === "Escape") backToMenu(); return; }
     if (!winPanel.hidden) { if (e.key === "Enter" || e.key === "Escape") backToMenu(); return; }
     if ((e.key === "h" || e.key === "H" || e.key === "?") && !running) { openHelp(); return; }
-    if (e.key === "Escape") { if (!overPanel.hidden) backToMenu(); else window.location.href = "/"; }
+    if ((e.key === "p" || e.key === "P" || e.key === " ") && running) { e.preventDefault(); togglePause(); return; }
+    if (e.key === "Escape") { if (paused) togglePause(); else if (!overPanel.hidden) backToMenu(); else window.location.href = "/"; }
     if ((e.key === "r" || e.key === "R") && dead) start();
     if (e.key === "m" || e.key === "M") { const m = audio.toggleMute(); muteEl.textContent = m ? "🔇 muted (M)" : "🔊 sound on (M)"; }
   });

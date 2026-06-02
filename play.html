@@ -15,6 +15,7 @@
     /* ---- NODE RUN — dodge game (easter egg) ---- */
     html, body { height: 100%; overflow: hidden; }
     body.playing { cursor: none; } /* hide pointer only mid-run, not on menus */
+    body.paused { cursor: default; } /* but show it again while paused */
 
     #game {
       position: fixed; inset: 0;
@@ -166,6 +167,15 @@
       color: var(--muted); font-size: 0.82rem; pointer-events: auto;
     }
     .home:hover { color: var(--text); }
+    /* pause button — only while playing, bottom-centre to avoid HUD */
+    .pause-btn {
+      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 5;
+      display: none; pointer-events: auto; cursor: pointer;
+      font-size: 0.78rem; line-height: 1; color: var(--muted);
+      background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px;
+    }
+    .pause-btn:hover { color: var(--text); border-color: var(--accent); }
+    body.playing .pause-btn { display: block; }
     .mute {
       position: fixed; right: 26px; bottom: 20px; z-index: 2;
       color: var(--muted); font-size: 0.8rem; pointer-events: none;
@@ -185,6 +195,7 @@
   </div>
 
   <a class="home" href="/">&larr; back to site</a>
+  <button class="pause-btn" id="pause-btn" aria-label="pause">&#10074;&#10074;</button>
   <div class="mute" id="mute" aria-hidden="true">🔊 sound on (M)</div>
 
   <!-- start -->
