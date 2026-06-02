@@ -42,8 +42,10 @@ await writeFile(join(postsDir, "index.json"), JSON.stringify(posts, null, 2) + "
 console.log(`Wrote posts/index.json — ${posts.length} post(s).`);
 
 // --- sitemap.xml: home page + every post ---
+// home page changes on every deploy, so stamp it with today's build date
+const today = new Date().toISOString().slice(0, 10);
 const urls = [
-  { loc: `${SITE}/`, lastmod: posts[0]?.date || "" },
+  { loc: `${SITE}/`, lastmod: today },
   ...posts.map((p) => ({
     loc: `${SITE}/post.html?slug=${p.slug}`,
     lastmod: p.date,
