@@ -316,8 +316,14 @@
   let anchor = null; // touch: where the finger + player were when the drag began
   const clamp01 = (v, hi) => (v < 0 ? 0 : v > hi ? hi : v);
 
+  let lastDown = -1e9;
   function startTouch(e) {
-    if (paused) { togglePause(); return; } // tap anywhere to resume
+    // ignore taps on UI controls (the button's own click handles them) so we
+    // don't double-toggle, and dedupe the pointerdown+touchstart pair for one tap
+    if (e.target && e.target.closest && e.target.closest("button, a, .mute")) return;
+    if (e.timeStamp - lastDown < 120) return;
+    lastDown = e.timeStamp;
+    if (paused) { togglePause(); return; } // tap anywhere (not a control) to resume
     const t = e.touches ? e.touches[0] : e;
     if (!t) return;
     anchor = (e.touches || e.pointerType === "touch")
@@ -1535,8 +1541,11 @@
     setPauseBtn();
   }
 
+  function toggleMute() { audio.resume(); const m = audio.toggleMute(); muteEl.textContent = m ? "🔇 muted (M)" : "🔊 sound on (M)"; }
+
   // controls
   if (pauseBtn) pauseBtn.addEventListener("click", togglePause);
+  muteEl.addEventListener("click", toggleMute);
   document.querySelectorAll(".mode-btn").forEach((b) => b.addEventListener("click", () => chooseMode(b.dataset.mode)));
   document.getElementById("retry-btn").addEventListener("click", start);
   document.getElementById("plot-begin").addEventListener("click", start);
@@ -1556,7 +1565,7 @@
     if ((e.key === "p" || e.key === "P" || e.key === " ") && running) { e.preventDefault(); togglePause(); return; }
     if (e.key === "Escape") { if (paused) togglePause(); else if (!overPanel.hidden) backToMenu(); else window.location.href = "/"; }
     if ((e.key === "r" || e.key === "R") && dead) start();
-    if (e.key === "m" || e.key === "M") { const m = audio.toggleMute(); muteEl.textContent = m ? "🔇 muted (M)" : "🔊 sound on (M)"; }
+    if (e.key === "m" || e.key === "M") toggleMute();
   });
 
   reset();

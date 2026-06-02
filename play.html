@@ -177,10 +177,11 @@
     .pause-btn:hover { color: var(--text); border-color: var(--accent); }
     body.playing .pause-btn { display: block; }
     .mute {
-      position: fixed; right: 26px; bottom: 20px; z-index: 2;
-      color: var(--muted); font-size: 0.8rem; pointer-events: none;
-      font-family: var(--font-body);
+      position: fixed; right: 26px; bottom: 20px; z-index: 5;
+      color: var(--muted); font-size: 0.8rem; pointer-events: auto; cursor: pointer;
+      font-family: var(--font-body); user-select: none;
     }
+    .mute:hover { color: var(--text); }
     .hint { font-size: 0.84rem; opacity: 0.8; }
   </style>
 </head>
