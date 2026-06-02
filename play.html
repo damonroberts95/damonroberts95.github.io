@@ -163,10 +163,14 @@
     .help .ic { width: 1.2em; flex: none; text-align: center; color: var(--text); }
     .help .note { font-size: 0.82rem; opacity: 0.8; margin-top: 10px; }
     .home {
-      position: fixed; left: 26px; bottom: 20px; z-index: 5; /* above panels */
-      color: var(--muted); font-size: 0.82rem; pointer-events: auto;
+      position: fixed; left: 22px; bottom: 18px; z-index: 5; /* above panels */
+      display: inline-flex; align-items: center; gap: 4px;
+      color: var(--muted); font-size: 0.82rem; line-height: 1; pointer-events: auto;
+      padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px;
+      background: rgba(8,7,13,0.55); backdrop-filter: blur(6px);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.35);
     }
-    .home:hover { color: var(--text); }
+    .home:hover { color: var(--text); border-color: var(--accent); }
     /* pause button — only while playing, bottom-centre to avoid HUD */
     .pause-btn {
       position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 5;
@@ -177,11 +181,15 @@
     .pause-btn:hover { color: var(--text); border-color: var(--accent); }
     body.playing .pause-btn { display: block; }
     .mute {
-      position: fixed; right: 26px; bottom: 20px; z-index: 5;
-      color: var(--muted); font-size: 0.8rem; pointer-events: auto; cursor: pointer;
+      position: fixed; right: 22px; bottom: 18px; z-index: 5;
+      display: inline-flex; align-items: center; gap: 4px;
+      color: var(--muted); font-size: 0.8rem; line-height: 1; pointer-events: auto; cursor: pointer;
       font-family: var(--font-body); user-select: none;
+      padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px;
+      background: rgba(8,7,13,0.55); backdrop-filter: blur(6px);
+      box-shadow: 0 4px 18px rgba(0,0,0,0.35);
     }
-    .mute:hover { color: var(--text); }
+    .mute:hover { color: var(--text); border-color: var(--accent); }
     .hint { font-size: 0.84rem; opacity: 0.8; }
     /* keyboard-only hints — hidden on touch devices (no keyboard) */
     @media (pointer: coarse) { .kbd-hint { display: none; } }
@@ -291,7 +299,7 @@
           <li><span class="dot" style="color:rgb(120,196,255)"></span><span><b>Blue — Scatter.</b> Roams the arena, only loosely after you.</span></li>
           <li><span class="dot" style="color:rgb(255,248,120)"></span><span><b>Yellow — Cluster.</b> Slow, weak chase, sticks tight to its kind.</span></li>
         </ul>
-        <p class="note">Same-colour nodes flock into groups, and the webs between nearby nodes are lethal. The longer you survive, the tighter the groups pack and the bigger the nodes grow.</p>
+        <p class="note">Same-colour nodes flock into groups, and the webs between nearby nodes are lethal. The longer you survive, the faster and tighter the swarm gets.</p>
 
         <h2>Powerups &amp; threats</h2>
         <ul>
@@ -300,10 +308,11 @@
           <li><span class="ic">❄</span><span><b>Freeze</b> — freezes all nodes for a few seconds (their webs still kill).</span></li>
           <li><span class="ic">⬡</span><span><b>Shield</b> — absorbs one hit and shoves the swarm away.</span></li>
           <li><span class="ic">»</span><span><b>Shooter</b> — auto-fires darts in your direction of travel for a few seconds, destroying nodes.</span></li>
+          <li><span class="ic">↺</span><span><b>Slow</b> — rare (Classic). A rewind clock that winds the swarm's speed back a few seconds.</span></li>
           <li><span class="ic">◉</span><span><b>Boss</b> — the big spiked eye. It takes on the personality of its colour. Catch it in a star-blast to pop it into a swarm of its own colour (+50).</span></li>
         </ul>
 
-        <h2>Keys</h2>
+        <h2 class="kbd-hint">Keys</h2>
         <p class="note kbd-hint"><kbd>M</kbd> mute &middot; <kbd>R</kbd> retry &middot; <kbd>Esc</kbd> back to site</p>
       </div>
 
