@@ -147,16 +147,47 @@ body::after {
 }
 .name .line { display: block; }
 
-/* hidden easter-egg target — the "D" of DAMON. Looks identical to the
-   rest of the name; grab cursor is the only (subtle) hint. Drag/tap
-   launches NODE RUN (see app.js). */
+/* hidden easter-egg target — the "D" of DAMON. Drag/tap launches NODE RUN
+   (see app.js). Hints it's interactive: a faint periodic shimmer sweep, and a
+   play-button badge on hover. */
 #egg {
+  position: relative;
   display: inline-block;
-  cursor: grab;
+  cursor: pointer;
   touch-action: none;
   will-change: transform;
+  /* base is the normal text colour; a coloured band sweeps through periodically */
+  background: linear-gradient(110deg,
+    currentColor 0%, currentColor 42%,
+    #ec4899 49%, #22d3ee 56%,
+    currentColor 63%, currentColor 100%);
+  background-size: 300% 100%;
+  background-position: 130% 0;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: eggShimmer 6s ease-in-out infinite;
 }
 #egg:active { cursor: grabbing; }
+/* play-button badge centred on the D, scales in on hover */
+#egg::after {
+  content: "►";
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%) scale(0.4);
+  width: 0.92em; height: 0.92em;
+  font-size: 0.42em; line-height: 0.92em; text-align: center; text-indent: 0.06em;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff; -webkit-text-fill-color: #fff;
+  box-shadow: 0 0 18px rgba(236, 72, 153, 0.6);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+#egg:hover::after { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+@keyframes eggShimmer {
+  0%, 65% { background-position: 130% 0; }
+  100%    { background-position: -30% 0; }
+}
+@media (prefers-reduced-motion: reduce) { #egg { animation: none; } }
 
 /* gradient-filled text for the surname */
 /* "ROBERTS" — bright vaporwave gradient that flows through the palette */
@@ -177,7 +208,16 @@ body::after {
 }
 
 /* About */
-.about { margin-bottom: 4rem; max-width: 60ch; }
+.about {
+  margin-bottom: 4rem; max-width: 64ch;
+  /* slight backdrop so the copy stays readable over the bright gradient wash */
+  padding: 1.6rem 1.8rem;
+  background: rgba(8, 7, 13, 0.42);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
 .about__head {
   font-family: var(--font-display);
   font-weight: 600;
