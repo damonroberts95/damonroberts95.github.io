@@ -183,6 +183,18 @@
     }
     .mute:hover { color: var(--text); }
     .hint { font-size: 0.84rem; opacity: 0.8; }
+    /* journey finale title — bigger, rainbow sweep + glow pulse, scales in */
+    .win-title {
+      font-size: clamp(2.4rem, 9vw, 4.4rem) !important;
+      line-height: 1.08; padding: 0.08em 0.06em;
+      background: linear-gradient(110deg, #22d3ee, #a855f7, #ec4899, #f97316, #facc15, #22d3ee);
+      background-size: 300% 100%;
+      -webkit-background-clip: text; background-clip: text; color: transparent;
+      animation: winSweep 5s linear infinite, winPop 0.7s cubic-bezier(.2,.8,.2,1.4) both;
+      filter: drop-shadow(0 0 22px rgba(236, 72, 153, 0.5));
+    }
+    @keyframes winSweep { to { background-position: 300% 0; } }
+    @keyframes winPop { from { opacity: 0; transform: scale(0.6); } to { opacity: 1; transform: scale(1); } }
   </style>
 </head>
 <body>
@@ -246,6 +258,7 @@
       <h1 id="plot-name" style="font-size:clamp(2rem,8vw,3.2rem)">Awakening</h1>
       <p class="big" id="plot-text"></p>
       <button class="btn" id="plot-begin">Begin</button>
+      <button class="btn btn--sm btn--ghost" id="plot-back" style="margin-left:10px">Back</button>
       <p class="hint" style="margin-top:12px"><kbd>Esc</kbd> for menu</p>
     </div>
   </div>
@@ -253,8 +266,8 @@
   <!-- journey: completed all levels -->
   <div class="panel" id="win" hidden>
     <div class="panel__card">
-      <h1>THROUGH</h1>
-      <p class="big" id="win-text">You slip past the core and out beyond the grid's edge. The Lattice falls quiet behind you. For the first time, no one is chasing. You're free.</p>
+      <h1 class="win-title">FREEDOM</h1>
+      <p class="big" id="win-text">You tear past the core and out beyond the edge of the grid. The Lattice goes dark behind you &mdash; no chasers, no webs, no walls. Just open space, and you, still running. You made it through the whole Lattice.</p>
       <button class="btn" id="win-menu">Back to menu</button>
     </div>
   </div>

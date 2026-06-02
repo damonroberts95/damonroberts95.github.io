@@ -125,6 +125,9 @@
       // lush, dreamy, romantic
       rose:  { chords: [{ root: 53, ivs: [0, 4, 7, 11] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 55, ivs: [0, 4, 7, 10] }, { root: 60, ivs: [0, 4, 7, 11] }],
                transpose: 0, bright: 9200, reverb: 1.35, bpmMul: 1.0, leadType: "triangle", leadCut: 3000, sparkle: false },
+      // finale — driving, dramatic, tense minor with a hard saw lead
+      confluence: { chords: [{ root: 45, ivs: [0, 3, 7, 10] }, { root: 53, ivs: [0, 4, 7, 10] }, { root: 50, ivs: [0, 3, 7, 11] }, { root: 52, ivs: [0, 4, 7, 10] }],
+               transpose: 0, bright: 13500, reverb: 1.25, bpmMul: 1.22, leadType: "sawtooth", leadCut: 5600, sparkle: true },
     };
     let prof = PROFILES.default;
 
@@ -302,8 +305,10 @@
       for (const hn of hunters) { hn.x *= sx; hn.y *= sy; }
       for (const g of gems) { g.x *= sx; g.y *= sy; }
       for (const bl of bullets) { bl.x *= sx; bl.y *= sy; }
+      for (const eb of enemyBullets) { eb.x *= sx; eb.y *= sy; }
+      for (const b of bosses) { b.x *= sx; b.y *= sy; }
       for (const s of shocks) { s.x *= sx; s.y *= sy; }
-      sc(star); sc(ice); sc(shield); sc(shooter); sc(boss);
+      sc(star); sc(ice); sc(shield); sc(shooter);
       if (anchor) { anchor.fx *= sx; anchor.fy *= sy; anchor.px *= sx; anchor.py *= sy; }
     }
   }
@@ -378,7 +383,8 @@
   let bullets = [];                    // {x,y,vx,vy,life} darts fired along travel
   const heading = { x: 1, y: 0 };      // last significant travel direction
   const SHOOT_DUR = 6, BULLET_GAP = 0.1;
-  let boss = null, nextBoss = 0; // big slow hunter
+  let bosses = [], nextBoss = 0;   // big slow hunters (usually 1; Confluence fields several)
+  let enemyBullets = [];           // shots a "shooter" boss fires at the player
 
   // ---- modes: classic (endless), waves (themed waves), journey (story levels) ----
   // `mode` is declared near the top (needed during initial loadBest()).
@@ -410,6 +416,12 @@
     ] },
     toxic: { name: "Toxic", vig: 0.42, tint: [10, 30, 8, 0.32], glows: [[120,255,60,0.28,0.5,-0.06,1.2], [80,200,40,0.22,0.18,1.08,1.0], [210,255,90,0.15,0.86,0.42,0.8]] },
     rose:  { name: "Rose",  vig: 0.38, tint: [42, 8, 26, 0.32], glows: [[255,40,120,0.30,0.3,-0.05,1.1], [255,100,170,0.22,0.82,1.05,0.9], [200,30,100,0.16,0.5,0.95,0.9]] },
+    // the finale — every colour at once, loud and dramatic
+    confluence: { name: "Confluence", vig: 0.30, tint: [18, 6, 34, 0.34], glows: [
+      [255,30,200,0.30,0.12,0.14,0.7], [30,235,255,0.30,0.88,0.16,0.7],
+      [255,120,30,0.24,0.5,1.06,0.8], [130,60,255,0.26,0.1,0.9,0.8],
+      [60,255,160,0.20,0.9,0.9,0.7], [255,60,90,0.22,0.5,-0.06,0.8], [255,215,40,0.18,0.32,0.5,0.6],
+    ] },
   };
   const BIOME_KEYS = ["dusk", "ice", "ember", "void", "neon", "toxic", "rose"];
   let lastBiome = null; // avoid immediate repeats when picking randomly
@@ -429,10 +441,10 @@
       plot: "Out in the open field the Scatterers roam, barely chasing. Calm — but the webs between them still bite." },
     { name: "The Hive",   color: "255,248,120", len: 40, boss: false, biome: "ember",
       plot: "The Hive packs tight and grows as one. Whole clusters drift together. Thread the gaps." },
-    { name: "The Warden", color: "199,116,232", len: 42, boss: true,  biome: "void",
-      plot: "A Warden node guards the gateway. Outlast it — catch it in a blast to break it open." },
-    { name: "Confluence", color: null,          len: 45, boss: true,  biome: "neon",
-      plot: "Every colour converges on the core. Reach the edge of the grid. One last run." },
+    { name: "The Warden", color: "199,116,232", len: 42, boss: true, biome: "void",
+      plot: "A Warden node guards the gateway. It won't let you pass — catch it in a star-blast and break it open. The level ends only when it falls." },
+    { name: "Confluence", color: null, len: 45, boss: true, bossCount: 3, shooter: true, biome: "confluence",
+      plot: "Every colour converges on the core — three Wardens, one that fires on you. Blast them all to break through. No way out until they're gone." },
   ];
 
   function rand(a, b) { return a + Math.random() * (b - a); }
@@ -485,7 +497,7 @@
     shooter = null; nextShooter = 18 + Math.random() * 10;
     shootUntil = 0; nextBullet = 0; bullets = [];
     heading.x = 1; heading.y = 0;
-    boss = null; nextBoss = 24 + Math.random() * 14;
+    bosses = []; enemyBullets = []; nextBoss = 24 + Math.random() * 14;
     audio.setShield(false);
     player.x = w / 2; player.y = h / 2;
     dead = false;
@@ -498,7 +510,7 @@
   }
 
   const BOSS_VAL = 50; // points for destroying the boss
-  function spawnBoss(forceColor) {
+  function spawnBoss(forceColor, shooter) {
     const edge = (Math.random() * 4) | 0;
     let x, y;
     if (edge === 0) { x = rand(0, w); y = -30 * dpr; }
@@ -506,7 +518,7 @@
     else if (edge === 2) { x = rand(0, w); y = h + 30 * dpr; }
     else { x = -30 * dpr; y = rand(0, h); }
     const color = forceColor || PALETTE[(Math.random() * PALETTE.length) | 0];
-    boss = { x, y, vx: 0, vy: 0, r: 22 * dpr, t: 0, color, p: PERSONA[color], seed: rand(0, 6.283185) };
+    bosses.push({ x, y, vx: 0, vy: 0, r: (shooter ? 26 : 22) * dpr, t: 0, color, p: PERSONA[color], seed: rand(0, 6.283185), shooter: !!shooter, fireCd: 1.6 });
   }
 
   // burst a cluster of same-colour nodes outward from a point (boss death → its swarm)
@@ -543,7 +555,7 @@
     biome = BIOMES[bkey];
     audio.setBiome(bkey);
     waveEndsAt = now + WAVE_LEN;
-    boss = null; // clear any boss that outlived the previous wave
+    bosses = []; enemyBullets = []; // clear any boss that outlived the previous wave
     let sub;
     if (bossWave) {
       waveType = "boss";
@@ -584,16 +596,26 @@
     audio.setBiome(L.biome);
     levelEndsAt = L.len;
     banner = { big: L.name, sub: themeColor ? PERSONA_NAME[themeColor] : "All colours", until: 2.4 };
-    if (L.boss) { boss = null; spawnBoss(themeColor || undefined); while (hunters.length < (MOBILE ? 12 : 18)) spawnHunter(); }
+    if (L.boss) {
+      bosses = []; enemyBullets = [];
+      const n = L.bossCount || 1;
+      // distinct colours per boss when the level has no single theme (Confluence)
+      const pool = PALETTE.slice().sort(() => Math.random() - 0.5);
+      for (let i = 0; i < n; i++) spawnBoss(themeColor || pool[i % pool.length], L.shooter && i === 0);
+      nextStar = 2; // boss levels need blasts to win → first one comes quickly
+      while (hunters.length < (MOBILE ? 12 : 18)) spawnHunter();
+    }
   }
 
-  // journey: a level's timer elapsed → next plot card, or the win screen
+  // journey: a level cleared → next plot card, or the win screen
   function levelComplete() {
     running = false;
     audio.sfx("shield"); // little fanfare
     journeyIdx++;
-    if (journeyIdx >= JOURNEY.length) { winPanel.hidden = false; document.body.classList.remove("playing"); }
-    else showPlot();
+    if (journeyIdx >= JOURNEY.length) {
+      winPanel.hidden = false; document.body.classList.remove("playing");
+      audio.sfx("blast"); winCelebrate();
+    } else showPlot();
   }
 
   // journey: show the plot card for the upcoming level (Begin → start())
@@ -640,7 +662,7 @@
     winPanel.hidden = true;
     document.body.classList.add("playing"); // hide cursor mid-run
     playerAlpha = 0; // fade the player in
-    running = true; paused = false; document.body.classList.remove("paused"); setPauseBtn();
+    running = true; paused = false; celebrating = false; document.body.classList.remove("paused"); setPauseBtn();
     startT = -1; // stamp on first frame (no Date.now needed)
     requestAnimationFrame(loop);
   }
@@ -687,9 +709,10 @@
     const dt = Math.min(0.05, (now - lastT) / 1000); // clamp big tab-switch gaps
     lastT = now;
     elapsed = (now - startT) / 1000;
-    // classic counts up (survival); waves/journey count DOWN to the wave/level end
+    // classic counts up (survival); waves/journey count DOWN to the wave/level end;
+    // journey boss levels show bosses-remaining instead (they end on defeat, not time)
     timeEl.textContent = mode === "waves" ? Math.max(0, waveEndsAt - elapsed).toFixed(1)
-      : mode === "journey" ? Math.max(0, levelEndsAt - elapsed).toFixed(1)
+      : mode === "journey" ? (JOURNEY[journeyIdx].boss ? bosses.length + " ◉" : Math.max(0, levelEndsAt - elapsed).toFixed(1))
       : elapsed.toFixed(1);
     playerAlpha = Math.min(1, playerAlpha + dt * 2.4); // fade-in
     if (playerAlpha > 0.05) { trail.push({ x: player.x, y: player.y }); if (trail.length > 24) trail.shift(); }
@@ -702,9 +725,14 @@
     const psp = Math.hypot(player.vx, player.vy);
     if (psp > 8 * dpr) { heading.x = player.vx / psp; heading.y = player.vy / psp; }
 
-    // mode progression: advance waves / complete journey levels on their timers
+    // mode progression: advance waves / complete journey levels.
+    // boss levels end ONLY when every boss is defeated (not on the timer).
     if (mode === "waves" && elapsed >= waveEndsAt) nextWave(elapsed);
-    else if (mode === "journey" && elapsed >= levelEndsAt) { levelComplete(); return; }
+    else if (mode === "journey") {
+      const L = JOURNEY[journeyIdx];
+      if (L.boss) { if (bosses.length === 0) { levelComplete(); return; } }
+      else if (elapsed >= levelEndsAt) { levelComplete(); return; }
+    }
 
     // difficulty ramps with time: more hunters fast, slightly slower speed.
     // desktop ramps a touch harder (steeper speed/accel, more nodes); mobile eased.
@@ -753,7 +781,8 @@
       const reach = STAR_R * dpr + player.r;
       if (sdx * sdx + sdy * sdy < reach * reach) {
         starBlast();
-        nextStar = elapsed + 8 + Math.random() * 7;
+        // boss levels rely on blasts to kill bosses → stars come back faster
+        nextStar = elapsed + (bosses.length ? 3.5 : 8) + Math.random() * (bosses.length ? 2 : 7);
       }
     }
 
@@ -822,7 +851,7 @@
     }
 
     // boss — occasional big slow hunter
-    if (mode === "classic" && !boss && elapsed >= nextBoss) spawnBoss(); // waves/journey place bosses themselves
+    if (mode === "classic" && bosses.length === 0 && elapsed >= nextBoss) spawnBoss(); // waves/journey place bosses themselves
 
     const frozen = elapsed < frozenUntil;
 
@@ -889,9 +918,10 @@
     }
     hunters = hunters.filter((h) => !h.dead);
 
-    // boss — steers by its colour's personality (a heavy, slower version of the
-    // matching node behaviour), bounces on walls, lethal on touch
-    if (boss) {
+    // bosses — each steers by its colour's personality (a heavy, slower version of
+    // the matching node behaviour), bounces on walls, lethal on touch. A "shooter"
+    // boss also fires aimed shots at the player.
+    for (const boss of bosses) {
       boss.t += dt;
       if (!frozen) {
         const p = boss.p;
@@ -918,9 +948,33 @@
         const m = boss.r;
         if (boss.x < m) { boss.x = m; boss.vx = Math.abs(boss.vx); } else if (boss.x > w - m) { boss.x = w - m; boss.vx = -Math.abs(boss.vx); }
         if (boss.y < m) { boss.y = m; boss.vy = Math.abs(boss.vy); } else if (boss.y > h - m) { boss.y = h - m; boss.vy = -Math.abs(boss.vy); }
+        // shooter boss: lob an aimed shot on a cooldown
+        if (boss.shooter) {
+          boss.fireCd -= dt;
+          if (boss.fireCd <= 0) {
+            const dx = player.x - boss.x, dy = player.y - boss.y, d = Math.hypot(dx, dy) || 1;
+            const spd = 320 * dpr * arenaScale;
+            enemyBullets.push({ x: boss.x, y: boss.y, vx: dx / d * spd, vy: dy / d * spd, life: 3, color: boss.color });
+            boss.fireCd = 1.4;
+            audio.sfx("pop");
+          }
+        }
       }
       const bdx2 = player.x - boss.x, bdy2 = player.y - boss.y, brr = boss.r + player.r;
       if (bdx2 * bdx2 + bdy2 * bdy2 < brr * brr && takeHit()) { drawScene(); gameOver(); return; }
+    }
+
+    // boss shots — travel, expire, and kill the player on contact (shield/i-frames apply)
+    for (let i = enemyBullets.length - 1; i >= 0; i--) {
+      const eb = enemyBullets[i];
+      if (!frozen) { eb.x += eb.vx * dt; eb.y += eb.vy * dt; }
+      eb.life -= dt;
+      if (eb.life <= 0 || eb.x < -30 || eb.x > w + 30 || eb.y < -30 || eb.y > h + 30) { enemyBullets.splice(i, 1); continue; }
+      const dx = player.x - eb.x, dy = player.y - eb.y, rr = player.r + 6 * dpr;
+      if (dx * dx + dy * dy < rr * rr) {
+        enemyBullets.splice(i, 1);
+        if (takeHit()) { drawScene(); gameOver(); return; }
+      }
     }
 
     // hunter-hunter forces (skipped while frozen) + lethal web check, one pass
@@ -1107,7 +1161,7 @@
 
   // boss — big menacing spiked orb with a glaring eye, in its own colour.
   // Deliberately unlike the small glowy powerup icons: spiky, dark-bodied, an eye.
-  function drawBoss() {
+  function drawBoss(boss) {
     const c = boss.color;
     const pulse = 1 + Math.sin(boss.t * 4) * 0.08;
     const R = boss.r * pulse;
@@ -1146,6 +1200,14 @@
     ctx.shadowBlur = 0;
     ctx.fillStyle = "rgba(8,5,14,0.95)";
     ctx.beginPath(); ctx.arc(ox, oy, eye * 0.5, 0, 6.283185); ctx.fill();
+    // shooter boss: a counter-rotating targeting ring so it reads as the threat
+    if (boss.shooter) {
+      ctx.rotate(-boss.t * 1.6);
+      ctx.lineWidth = 2 * dpr; ctx.strokeStyle = `rgba(${c},0.85)`;
+      ctx.setLineDash([6 * dpr, 7 * dpr]);
+      ctx.beginPath(); ctx.arc(0, 0, R * 1.32, 0, 6.283185); ctx.stroke();
+      ctx.setLineDash([]);
+    }
     ctx.restore();
   }
 
@@ -1295,6 +1357,33 @@
     ctx.restore();
   }
 
+  // journey finale flourish — rainbow rings burst from centre behind the win panel
+  let celebrating = false;
+  function winCelebrate() {
+    celebrating = true;
+    const rings = [];
+    for (let i = 0; i < 7; i++) rings.push({ t: -i * 0.1, hue: i * 52 });
+    const step = () => {
+      if (!celebrating) return;
+      ctx.clearRect(0, 0, w, h);
+      drawBiome();
+      let alive = false;
+      for (const r of rings) {
+        r.t += 0.012;
+        if (r.t < 0) { alive = true; continue; }
+        if (r.t >= 1.1) continue;
+        alive = true;
+        const rad = r.t * Math.max(w, h) * 0.9;
+        ctx.beginPath(); ctx.arc(w / 2, h / 2, rad, 0, 6.283185);
+        ctx.lineWidth = 5 * dpr;
+        ctx.strokeStyle = `hsla(${(r.hue + r.t * 220) % 360},95%,65%,${Math.max(0, 1 - r.t) * 0.85})`;
+        ctx.stroke();
+      }
+      if (alive) requestAnimationFrame(step); else celebrating = false;
+    };
+    requestAnimationFrame(step);
+  }
+
   function drawScene() {
     drawBiome();
     // expanding shockwave rings — yellow for cluster jolts, rainbow for star blast
@@ -1311,18 +1400,18 @@
         });
         const killed = before - hunters.length;
         if (killed) { points += killed * KILL_VAL; ptsEl.textContent = String(points); }
-        // the wave also destroys the boss → pops into a swarm of its own colour + bonus
-        if (boss) {
-          const dx = boss.x - s.x, dy = boss.y - s.y;
+        // the wave also destroys any boss it reaches → pops into a swarm + bonus
+        for (let bi = bosses.length - 1; bi >= 0; bi--) {
+          const b = bosses[bi];
+          const dx = b.x - s.x, dy = b.y - s.y;
           if (dx * dx + dy * dy <= r2) {
-            popInto(boss.x, boss.y, boss.color, 8);
+            popInto(b.x, b.y, b.color, 8);
             points += BOSS_VAL; ptsEl.textContent = String(points);
-            shocks.push({ x: boss.x, y: boss.y, t: 0, max: 160 * dpr });
-            boss = null;
-            nextBoss = elapsed + 24 + Math.random() * 14; // classic: don't insta-respawn the boss
-
+            shocks.push({ x: b.x, y: b.y, t: 0, max: 200 * dpr });
+            bosses.splice(bi, 1);
           }
         }
+        if (mode === "classic" && bosses.length === 0) nextBoss = elapsed + 24 + Math.random() * 14;
       }
       ctx.beginPath();
       ctx.arc(s.x, s.y, rad, 0, 6.283185);
@@ -1362,7 +1451,20 @@
     }
 
     // boss
-    if (boss) drawBoss();
+    for (const b of bosses) drawBoss(b);
+
+    // boss shots — bright menacing darts in the boss's colour
+    if (enemyBullets.length) {
+      ctx.save();
+      ctx.lineCap = "round";
+      for (const eb of enemyBullets) {
+        const s = Math.hypot(eb.vx, eb.vy) || 1, ux = eb.vx / s, uy = eb.vy / s, len = 13 * dpr;
+        ctx.strokeStyle = `rgba(${eb.color},0.95)`; ctx.lineWidth = 4 * dpr;
+        ctx.shadowColor = `rgba(${eb.color},0.9)`; ctx.shadowBlur = 12 * dpr;
+        ctx.beginPath(); ctx.moveTo(eb.x, eb.y); ctx.lineTo(eb.x - ux * len, eb.y - uy * len); ctx.stroke();
+      }
+      ctx.restore(); ctx.shadowBlur = 0;
+    }
 
     // point gems
     for (const g of gems) { g.t += 0.04; drawGem(g.x, g.y, g.t); }
@@ -1529,7 +1631,7 @@
   }
   // return to the mode-select menu from win/over/plot
   function backToMenu() {
-    running = false; dead = false; paused = false; setPauseBtn();
+    running = false; dead = false; paused = false; celebrating = false; setPauseBtn();
     overPanel.hidden = true; winPanel.hidden = true; plotPanel.hidden = true; helpPanel.hidden = true;
     document.body.classList.remove("playing", "paused");
     startPanel.hidden = false;
@@ -1559,6 +1661,7 @@
   document.querySelectorAll(".mode-btn").forEach((b) => b.addEventListener("click", () => chooseMode(b.dataset.mode)));
   document.getElementById("retry-btn").addEventListener("click", start);
   document.getElementById("plot-begin").addEventListener("click", start);
+  document.getElementById("plot-back").addEventListener("click", backToMenu);
   document.getElementById("win-menu").addEventListener("click", backToMenu);
   document.getElementById("menu-btn").addEventListener("click", backToMenu);
   document.getElementById("help-btn").addEventListener("click", openHelp);
@@ -1580,4 +1683,15 @@
 
   reset();
   idleFrame();
+
+  // dev shortcut (LOCAL ONLY — never runs on the live site): play.html#level=N jumps
+  // straight into Journey level N (1-based). e.g. #level=8 = Confluence. Also #waves/#classic.
+  (function jumpFromHash() {
+    if (!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) return;
+    const h = location.hash;
+    const m = h.match(/level=(\d+)/);
+    if (m) { mode = "journey"; journeyIdx = Math.max(0, Math.min(JOURNEY.length - 1, +m[1] - 1)); loadBest(); startPanel.hidden = true; start(); }
+    else if (/waves/.test(h)) { mode = "waves"; loadBest(); startPanel.hidden = true; start(); }
+    else if (/classic/.test(h)) { mode = "classic"; loadBest(); startPanel.hidden = true; start(); }
+  })();
 })();
