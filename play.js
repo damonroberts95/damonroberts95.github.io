@@ -1319,6 +1319,8 @@
             points += BOSS_VAL; ptsEl.textContent = String(points);
             shocks.push({ x: boss.x, y: boss.y, t: 0, max: 160 * dpr });
             boss = null;
+            nextBoss = elapsed + 24 + Math.random() * 14; // classic: don't insta-respawn the boss
+
           }
         }
       }
