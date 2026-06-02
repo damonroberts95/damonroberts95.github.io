@@ -382,39 +382,41 @@
     "255,138,96": "The Shy", "120,196,255": "Scatterers", "255,248,120": "The Hive",
   };
 
-  // Biomes — translucent radial washes drawn over the (transparent) canvas, so the
-  // site's day/night background still shows through. All keep a dark feel; "neon" is
-  // the loud one. glows: [r,g,b,alpha,xfrac,yfrac,sizefrac]; vig = edge-darken alpha.
+  // Biomes — a full-screen colour tint plus vibrant radial glows drawn over the
+  // (transparent) canvas; the site's day/night bg still shows faintly through. Kept
+  // dark-but-saturated so each reads distinctly. tint: [r,g,b,alpha] flat wash;
+  // glows: [r,g,b,alpha,xfrac,yfrac,sizefrac]; vig = edge-darken alpha.
   const BIOMES = {
-    dusk:  { name: "Dusk",  vig: 0.34, glows: [[255,140,70,0.10,0.5,1.15,1.1], [180,90,246,0.08,0.2,-0.1,0.9]] },
-    void:  { name: "Void",  vig: 0.5,  glows: [[60,40,120,0.10,0.5,0.5,1.3]] },
-    ember: { name: "Ember", vig: 0.42, glows: [[255,70,60,0.10,0.3,1.05,1.0], [255,150,40,0.08,0.8,1.1,0.8]] },
-    ice:   { name: "Ice",   vig: 0.30, glows: [[120,200,255,0.10,0.5,-0.1,1.1], [80,140,220,0.07,0.5,1.1,1.0]] },
-    neon:  { name: "Neon",  vig: 0.30, glows: [
-      [255,40,200,0.13,0.18,0.16,0.7], [40,230,255,0.13,0.84,0.22,0.7],
-      [150,60,255,0.12,0.5,0.92,0.8], [60,255,160,0.09,0.12,0.84,0.6], [255,210,40,0.08,0.9,0.86,0.55],
+    dusk:  { name: "Dusk",  vig: 0.40, tint: [40, 14, 36, 0.30], glows: [[255,120,40,0.26,0.5,1.15,1.2], [210,70,180,0.20,0.18,-0.08,1.0], [120,60,220,0.14,0.85,0.1,0.9]] },
+    void:  { name: "Void",  vig: 0.58, tint: [16, 12, 40, 0.40], glows: [[90,50,210,0.24,0.5,0.45,1.4], [40,30,120,0.20,0.15,1.05,1.1]] },
+    ember: { name: "Ember", vig: 0.46, tint: [44, 10, 8, 0.34], glows: [[255,60,40,0.30,0.3,1.08,1.1], [255,150,30,0.22,0.82,1.05,0.9], [255,40,90,0.16,0.5,-0.05,0.9]] },
+    ice:   { name: "Ice",   vig: 0.34, tint: [10, 26, 46, 0.32], glows: [[90,200,255,0.28,0.5,-0.08,1.2], [60,130,230,0.20,0.5,1.12,1.0], [150,240,255,0.14,0.15,0.4,0.8]] },
+    neon:  { name: "Neon",  vig: 0.34, tint: [22, 8, 38, 0.32], glows: [
+      [255,30,200,0.30,0.16,0.16,0.8], [30,235,255,0.30,0.86,0.22,0.8],
+      [160,50,255,0.24,0.5,0.94,0.9], [60,255,170,0.18,0.1,0.86,0.7], [255,215,40,0.16,0.92,0.86,0.6],
     ] },
   };
-  const WAVE_BIOMES = ["dusk", "ice", "ember", "void", "neon"]; // cycled per wave
+  const BIOME_KEYS = ["dusk", "ice", "ember", "void", "neon"];
+  let lastBiome = null; // avoid immediate repeats when picking randomly
 
   // Journey — a light run through "the Lattice". Each level: dominant colour,
   // survive seconds, optional boss, a biome, and a line of plot shown before it.
   const JOURNEY = [
-    { name: "Awakening",  color: "199,116,232", len: 15, boss: false, biome: "dusk",
+    { name: "Awakening",  color: "199,116,232", len: 42, boss: false, biome: "dusk",
       plot: "You wake as a stray node in the Lattice — a living grid of data. The Chasers turn toward you. Run." },
-    { name: "The Ambush", color: "255,106,213", len: 17, boss: false, biome: "dusk",
+    { name: "The Ambush", color: "255,106,213", len: 44, boss: false, biome: "dusk",
       plot: "Word spreads through the mesh. The Ambushers learn your habits, cutting ahead of every move you make." },
-    { name: "Static",     color: "34,211,238",  len: 18, boss: false, biome: "ice",
+    { name: "Static",     color: "34,211,238",  len: 45, boss: false, biome: "ice",
       plot: "Deeper in, the signal frays. Erratics spiral around you, never quite where you expect." },
-    { name: "The Timid",  color: "255,138,96",  len: 18, boss: false, biome: "ember",
+    { name: "The Timid",  color: "255,138,96",  len: 45, boss: false, biome: "ember",
       plot: "The Shy ones swarm and flinch — bold from afar, panicked up close. Use their fear." },
-    { name: "Drift",      color: "120,196,255", len: 20, boss: false, biome: "void",
+    { name: "Drift",      color: "120,196,255", len: 46, boss: false, biome: "void",
       plot: "Out in the open field the Scatterers roam, barely chasing. Calm — but the webs between them still bite." },
-    { name: "The Hive",   color: "255,248,120", len: 20, boss: false, biome: "ember",
+    { name: "The Hive",   color: "255,248,120", len: 46, boss: false, biome: "ember",
       plot: "The Hive packs tight and grows as one. Whole clusters drift together. Thread the gaps." },
-    { name: "The Warden", color: "199,116,232", len: 22, boss: true,  biome: "void",
+    { name: "The Warden", color: "199,116,232", len: 48, boss: true,  biome: "void",
       plot: "A Warden node guards the gateway. Outlast it — catch it in a blast to break it open." },
-    { name: "Confluence", color: null,          len: 26, boss: true,  biome: "neon",
+    { name: "Confluence", color: null,          len: 50, boss: true,  biome: "neon",
       plot: "Every colour converges on the core. Reach the edge of the grid. One last run." },
   ];
 
@@ -519,7 +521,10 @@
   function nextWave(now) {
     wave++;
     bossWave = wave % 5 === 0;
-    const bkey = WAVE_BIOMES[(wave - 1) % WAVE_BIOMES.length];
+    // random biome each wave (no immediate repeat)
+    let bkey = BIOME_KEYS[(Math.random() * BIOME_KEYS.length) | 0];
+    if (bkey === lastBiome) bkey = BIOME_KEYS[(BIOME_KEYS.indexOf(bkey) + 1) % BIOME_KEYS.length];
+    lastBiome = bkey;
     biome = BIOMES[bkey];
     audio.setBiome(bkey);
     waveEndsAt = now + WAVE_LEN;
@@ -1176,6 +1181,11 @@
   // biome wash — translucent colour over the dark, transparent canvas (site bg shows through)
   function drawBiome() {
     if (!biome) return;
+    if (biome.tint) { // flat colour wash for a clear, distinct base hue
+      const [r, g, b, a] = biome.tint;
+      ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+      ctx.fillRect(0, 0, w, h);
+    }
     for (const [r, g, b, a, fx, fy, fs] of biome.glows) {
       const cx = w * fx, cy = h * fy, rad = Math.max(w, h) * fs;
       const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
@@ -1465,7 +1475,6 @@
   document.getElementById("plot-begin").addEventListener("click", start);
   document.getElementById("win-menu").addEventListener("click", backToMenu);
   document.getElementById("menu-btn").addEventListener("click", backToMenu);
-  document.getElementById("menu-ingame").addEventListener("click", backToMenu);
   document.getElementById("help-btn").addEventListener("click", openHelp);
   document.getElementById("help-btn-over").addEventListener("click", openHelp);
   document.getElementById("help-back").addEventListener("click", closeHelp);
