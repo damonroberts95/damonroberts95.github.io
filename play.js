@@ -560,9 +560,10 @@
     if (bossWave) {
       waveType = "boss";
       themeColor = PALETTE[(Math.random() * PALETTE.length) | 0];
-      spawnBoss(themeColor);
+      const shoots = Math.random() < Math.min(0.6, 0.2 + wave * 0.04); // later waves more likely
+      spawnBoss(themeColor, shoots);
       while (hunters.length < (MOBILE ? 12 : 18)) spawnHunter(); // a proper swarm alongside the boss
-      sub = "BOSS · " + (PERSONA_NAME[themeColor] || "");
+      sub = (shoots ? "SHOOTER BOSS · " : "BOSS · ") + (PERSONA_NAME[themeColor] || "");
     } else {
       const roll = Math.random();
       waveType = roll < 0.18 ? "special" : roll < 0.5 ? "mixed" : "themed";
@@ -851,7 +852,10 @@
     }
 
     // boss — occasional big slow hunter
-    if (mode === "classic" && bosses.length === 0 && elapsed >= nextBoss) spawnBoss(); // waves/journey place bosses themselves
+    // classic: occasional boss; chance it's a shooter rises the longer you survive
+    if (mode === "classic" && bosses.length === 0 && elapsed >= nextBoss) {
+      spawnBoss(undefined, Math.random() < Math.min(0.5, 0.18 + elapsed / 240));
+    }
 
     const frozen = elapsed < frozenUntil;
 
