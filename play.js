@@ -684,8 +684,13 @@
     // difficulty ramps with time: more hunters fast, slightly slower speed.
     // desktop ramps a touch harder (steeper speed/accel, more nodes); mobile eased.
     const sp = MOBILE ? 0.78 : 1;                 // ease speed on small screens
-    const maxSpeed = (90 + elapsed * (MOBILE ? 4 : 5)) * dpr * sp * arenaScale;
-    const accel = (220 + elapsed * (MOBILE ? 9 : 11)) * dpr * sp * arenaScale; // homing strength (chase the cursor)
+    // escalate speed/accel by progress: journey per level, waves per wave number
+    // (both reset/segment elapsed, so this keeps the climb going across them)
+    const diff = mode === "journey" ? 1 + journeyIdx * 0.07
+               : mode === "waves" ? 1 + (wave - 1) * 0.04
+               : 1;
+    const maxSpeed = (90 + elapsed * (MOBILE ? 4 : 5)) * dpr * sp * arenaScale * diff;
+    const accel = (220 + elapsed * (MOBILE ? 9 : 11)) * dpr * sp * arenaScale * diff; // homing strength (chase the cursor)
     const cap = Math.round((MOBILE ? 32 : 130) * arenaScale), rate = MOBILE ? 0.6 : 1.15; // more nodes on bigger arenas
     // Journey resets elapsed each level, so it would re-ramp from sparse every time.
     // Start fuller, ramp faster, and escalate the floor with the level number.
