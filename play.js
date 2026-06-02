@@ -252,12 +252,13 @@
     // on-canvas UI (banner/labels) sized off DEVICE dimensions, not dpr, so it stays
     // a sensible physical size when zoomed out (where dpr shrinks but the screen doesn't).
     uiScale = Math.max(0.9, Math.min(2, Math.min(w, h) / 780));
-    if (player) player.r = 7 * dpr;
     // remap every position to the new dimensions so a mid-run zoom/resize doesn't
     // throw entities out of the (rescaled) coordinate space and break the game.
+    // (guarded by oldW so it never runs on the first call, before state exists)
     if (oldW && oldH && (oldW !== w || oldH !== h)) {
       const sx = w / oldW, sy = h / oldH;
       const sc = (o) => { if (o) { o.x *= sx; o.y *= sy; } };
+      player.r = 7 * dpr;
       sc(player); player.px *= sx; player.py *= sy;
       for (const hn of hunters) { hn.x *= sx; hn.y *= sy; }
       for (const g of gems) { g.x *= sx; g.y *= sy; }
