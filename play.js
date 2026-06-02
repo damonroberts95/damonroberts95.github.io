@@ -222,6 +222,16 @@
       }
       // offbeat hats keep it moving
       if (b % 2 === 1) noiseHit(t, 0.025, 0.014, music, 10000);
+      // long evolving drone bed — a sustained synth layer spanning two bars
+      if (s % 32 === 0) {
+        synth(mtof(c.root - 12 + tr) * pitch, t, 6.2, { gain: 0.04, detune: 26, voices: 3, cut: 900, q: 1.0, attack: 1.8 });
+        synth(mtof(c.root + 7 + tr) * pitch, t, 6.2, { gain: 0.03, detune: 22, voices: 3, cut: 1100, q: 1.0, attack: 2.2 });
+      }
+      // quiet electronic 16th pulse — a filtered arp, like signals travelling the links
+      {
+        const seq = c.root + c.ivs[(b * 3) % c.ivs.length] + 12 + tr;
+        synth(mtof(seq) * pitch, t, 0.16, { type: prof.leadType, gain: 0.03, detune: 4, voices: 1, cut: prof.leadCut * 0.85, q: 7, attack: 0.005 });
+      }
       // shield active OR a sparkly biome → bright shimmer layer an octave up
       if ((bright || prof.sparkle) && b % 2 === 0) {
         const note = c.root + c.ivs[ARP[b] % c.ivs.length] + 24 + tr;
@@ -383,6 +393,8 @@
   let bullets = [];                    // {x,y,vx,vy,life} darts fired along travel
   const heading = { x: 1, y: 0 };      // last significant travel direction
   const SHOOT_DUR = 6, BULLET_GAP = 0.1;
+  let slowmo = null, nextSlow = 0, speedSetback = 0; // rare powerup: rolls the SPEED ramp back a few seconds (cap unaffected)
+  const SLOW_SETBACK = 10;          // seconds of speed-progression removed per pickup
   let bosses = [], nextBoss = 0;   // big slow hunters (usually 1; Confluence fields several)
   let enemyBullets = [];           // shots a "shooter" boss fires at the player
 
@@ -393,13 +405,17 @@
   let bossWave = false;             // current wave/level features the boss
   let journeyIdx = 0, levelEndsAt = 0; // journey mode
   let frozenAccum = 0, waveRampStart = 0; // seconds spent frozen (excluded from the speed ramp)
+  let biomeFade = 1, prevBiome = null, biomeFadeRate = 1.6; // crossfade between biomes (0→1)
+  let pattern = null, prevPattern = null; // subtle background pattern, varies per biome
+  let nextBiomeAt = 0;              // classic: time of the next slow biome shift
+  const PATTERN_KEYS = ["none", "grid", "dots", "rings", "diag", "weave", "cross", "wave", "hex"];
   let banner = null;                // {big, sub, until} transient on-canvas wave/level title
   let biome = null;                 // current biome (visual theme)
   const WAVE_LEN = 18;              // seconds per wave (survive to advance)
 
   const PERSONA_NAME = {
     "199,116,232": "Chasers", "255,106,213": "Ambushers", "34,211,238": "Erratics",
-    "255,138,96": "The Shy", "120,196,255": "Scatterers", "255,248,120": "The Hive",
+    "255,138,96": "Shy Ones", "120,196,255": "Scatterers", "255,248,120": "The Hive",
   };
 
   // Biomes — a full-screen colour tint plus vibrant radial glows drawn over the
@@ -497,17 +513,19 @@
     shieldActive = false; invulnUntil = 0;
     shooter = null; nextShooter = 18 + Math.random() * 10;
     shootUntil = 0; nextBullet = 0; bullets = [];
+    slowmo = null; nextSlow = 40 + Math.random() * 30; speedSetback = 0;
     heading.x = 1; heading.y = 0;
     bosses = []; enemyBullets = []; nextBoss = 24 + Math.random() * 14;
-    frozenAccum = 0; waveRampStart = 0;
+    frozenAccum = 0; waveRampStart = 0; biomeFade = 1; prevBiome = null;
     audio.setShield(false);
     player.x = w / 2; player.y = h / 2;
     dead = false;
     // per-mode setup
-    wave = 0; themeColor = null; bossWave = false; banner = null; biome = null;
+    wave = 0; themeColor = null; bossWave = false; banner = null;
+    biome = null; prevBiome = null; pattern = null; biomeFade = 1;
     if (mode === "waves") nextWave(0);
     else if (mode === "journey") setupJourneyLevel();
-    else audio.setBiome(null); // classic → default music theme
+    else { pickBiome(true, true); scheduleBiomeShift(); } // classic → slow drifting biomes (fade in)
     for (let i = 0; i < 3; i++) spawnHunter();
   }
 
@@ -544,6 +562,23 @@
 
   // ---- mode flow ----
 
+  // pick a new random biome + pattern (no immediate biome repeat). `fade`=false snaps
+  // (use at level start); `slow` gives a longer, gentle crossfade (classic ambience).
+  function pickBiome(fade, slow) {
+    let bkey = BIOME_KEYS[(Math.random() * BIOME_KEYS.length) | 0];
+    if (bkey === lastBiome) bkey = BIOME_KEYS[(BIOME_KEYS.indexOf(bkey) + 1) % BIOME_KEYS.length];
+    lastBiome = bkey;
+    prevBiome = biome; prevPattern = pattern;
+    biome = BIOMES[bkey];
+    pattern = PATTERN_KEYS[(Math.random() * PATTERN_KEYS.length) | 0];
+    biomeFade = fade ? 0 : 1;
+    biomeFadeRate = slow ? 0.13 : 1.6; // classic: a long, gentle ~8s crossfade
+    audio.setBiome(bkey);
+  }
+
+  // classic: drift to a fresh biome every so often (slow colour crossfade)
+  function scheduleBiomeShift() { nextBiomeAt = elapsed + 13 + Math.random() * 4; } // steady, frequent (fade is slow)
+
   // waves: advance to the next wave (called at reset for wave 1, then on timer).
   // Flavours: themed (one colour), mixed (all colours, like classic), special
   // (a powerup/gem cache — a reward breather), and a boss every 5th wave.
@@ -551,13 +586,9 @@
     wave++;
     bossWave = wave % 5 === 0;
     // random biome each wave (no immediate repeat)
-    let bkey = BIOME_KEYS[(Math.random() * BIOME_KEYS.length) | 0];
-    if (bkey === lastBiome) bkey = BIOME_KEYS[(BIOME_KEYS.indexOf(bkey) + 1) % BIOME_KEYS.length];
-    lastBiome = bkey;
-    biome = BIOMES[bkey];
-    audio.setBiome(bkey);
+    pickBiome(true, false); // always crossfade colours + pattern into the new biome
     waveEndsAt = now + WAVE_LEN;
-    bosses = []; enemyBullets = []; // clear any boss that outlived the previous wave
+    // undefeated bosses carry over to the next wave (don't clear them)
     waveRampStart = elapsed - frozenAccum; // wave speed ramps from here (active time)
     let sub;
     if (bossWave) {
@@ -597,6 +628,8 @@
     themeColor = L.color;
     bossWave = !!L.boss;
     biome = BIOMES[L.biome] || null;
+    prevBiome = null; biomeFade = 0; biomeFadeRate = 1.6; // always fade the biome in
+    pattern = PATTERN_KEYS[(Math.random() * PATTERN_KEYS.length) | 0];
     audio.setBiome(L.biome);
     levelEndsAt = L.len;
     banner = { big: L.name, sub: themeColor ? PERSONA_NAME[themeColor] : "All colours", until: 2.4 };
@@ -651,7 +684,9 @@
 
   // collect a star → expanding shockwave that destroys nodes as it reaches them
   function starBlast() {
-    shocks.push({ x: player.x, y: player.y, t: 0, max: 340 * dpr, rainbow: true, kill: true });
+    // smaller reach on mobile so it doesn't engulf the whole (small) screen
+    const reach = (MOBILE ? 200 : 340) * dpr * arenaScale;
+    shocks.push({ x: player.x, y: player.y, t: 0, max: reach, rainbow: true, kill: true });
     audio.sfx("blast");
     star = null;
   }
@@ -685,6 +720,7 @@
     lbStatusEl.textContent = "";
     submitScoreBtn.disabled = false;
     lbSubmitEl.hidden = false; // always show the button; it submits THIS run only
+    document.getElementById("restart-btn").hidden = mode !== "journey"; // "Start over" only in journey
     const modeName = mode === "waves" ? "Waves" : mode === "journey" ? "Journey" : "Classic";
     let reach = "";
     if (mode === "waves") reach = "Reached wave " + wave + " · ";
@@ -714,6 +750,7 @@
     lastT = now;
     elapsed = (now - startT) / 1000;
     if (elapsed < frozenUntil) frozenAccum += dt; // don't let frozen time fuel the speed ramp
+    if (biomeFade < 1) biomeFade = Math.min(1, biomeFade + dt * biomeFadeRate); // biome crossfade
     // classic counts up (survival); waves/journey count DOWN to the wave/level end;
     // journey boss levels show bosses-remaining instead (they end on defeat, not time)
     timeEl.textContent = mode === "waves" ? Math.max(0, waveEndsAt - elapsed).toFixed(1)
@@ -737,46 +774,54 @@
       const L = JOURNEY[journeyIdx];
       if (L.boss) { if (bosses.length === 0) { levelComplete(); return; } }
       else if (elapsed >= levelEndsAt) { levelComplete(); return; }
-    }
+    } else if (mode === "classic" && elapsed >= nextBiomeAt) { pickBiome(true, true); scheduleBiomeShift(); }
 
     // difficulty ramps with time: more hunters fast, slightly slower speed.
     // rampTime excludes time spent frozen, so a late freeze doesn't make the game
     // jump to a much higher speed the instant it thaws.
     const rt = elapsed - frozenAccum;
+    // speed clock = ramp time minus any roll-back from the slow powerup (cap/grow
+    // use rt, so the node count keeps climbing — only travel speed is rewound)
+    const st = Math.max(0, rt - speedSetback);
     const sp = MOBILE ? 0.78 : 1;                 // ease speed on small screens
     let maxSpeed, accel;
     if (mode === "waves") {
       // Waves: ramp off time-INTO-the-current-wave (resets each wave → speed steps
       // down at every wave start), with a gentle per-wave base so it rises overall.
-      const into = Math.max(0, rt - waveRampStart); // active secs into the current wave
+      const into = Math.max(0, st - waveRampStart); // active secs into the current wave
       const baseS = 90 + Math.min(120, (wave - 1) * 8);
       const baseA = 200 + Math.min(180, (wave - 1) * 12);
       maxSpeed = (baseS + into * (MOBILE ? 1.2 : 1.5)) * dpr * sp * arenaScale;
       accel = (baseA + into * (MOBILE ? 2.4 : 3)) * dpr * sp * arenaScale;
     } else {
-      // Classic/Journey: ramp with active time; journey escalates a touch per level.
-      const diff = mode === "journey" ? 1 + journeyIdx * 0.045 : 1;
-      maxSpeed = (90 + rt * (MOBILE ? 4 : 5)) * dpr * sp * arenaScale * diff;
-      accel = (220 + rt * (MOBILE ? 9 : 11)) * dpr * sp * arenaScale * diff;
+      // Classic/Journey: ramp with active time; journey escalates a touch per level
+      // (mobile journey nudged ~10% harder).
+      const diff = mode === "journey" ? (1 + journeyIdx * 0.045) * (MOBILE ? 1.1 : 1) : 1;
+      maxSpeed = (90 + st * (MOBILE ? 4 : 5)) * dpr * sp * arenaScale * diff;
+      accel = (220 + st * (MOBILE ? 9 : 11)) * dpr * sp * arenaScale * diff;
     }
-    const cap = Math.round((MOBILE ? 32 : 130) * arenaScale), rate = MOBILE ? 0.6 : 1.15; // more nodes on bigger arenas
+    // The Hive (yellow, slow clusterers) packs more nodes — bigger cap + faster build
+    const hive = themeColor === "255,248,120";
+    const cap = Math.round((MOBILE ? 32 : 130) * arenaScale * (hive ? 1.45 : 1)), rate = (MOBILE ? 0.6 : 1.15) * (hive ? 1.5 : 1);
     // Journey resets elapsed each level, so it would re-ramp from sparse every time.
     // Start fuller, ramp faster, and escalate the floor with the level number.
-    const jBase = mode === "journey" ? 4 + journeyIdx : 0;
-    const jRate = mode === "journey" ? 1.25 : 1;
+    const jBase = mode === "journey" ? 4 + journeyIdx : mode === "waves" ? 6 : 0;
+    const jRate = mode === "journey" ? 1.25 : mode === "waves" ? 1.25 : 1;
     let targetCount = Math.min(cap, 6 + jBase + Math.floor(rt * rate * jRate));
     if (bossWave) targetCount = Math.min(targetCount, MOBILE ? 14 : 22); // thin the swarm so the boss is the threat
     else if (waveType === "special") targetCount = Math.min(targetCount, MOBILE ? 18 : 30); // calmer reward wave
-    // nodes swell the longer you survive → bigger targets, harder dodging (capped at 3x)
-    const grow = 1 + Math.min(2, rt / 90);
+    const grow = 1; // node size scaling removed — constant radius
     // refill toward the target ONE node at a time on a cooldown — so a powerup
     // blast (or boss pop) thins the swarm for a while instead of backfilling
     // instantly next frame. The natural ramp is slower than this, so it's only
     // throttled right after a big kill.
     if (hunters.length < targetCount && elapsed >= nextSpawn) {
       spawnHunter();
-      // journey fills faster, waves a bit slower (killed enemies don't snap back)
-      nextSpawn = elapsed + (mode === "journey" ? 0.42 : mode === "waves" ? 0.9 : SPAWN_GAP);
+      // journey fills faster, waves a bit slower (killed enemies don't snap back);
+      // the Hive refills quickest of all
+      let gap = mode === "journey" ? 0.42 : mode === "waves" ? 0.9 : SPAWN_GAP;
+      if (hive) gap *= 0.5;
+      nextSpawn = elapsed + gap;
     }
 
     // spawn a rainbow star now and then; collect it by touching it
@@ -854,6 +899,20 @@
         audio.sfx("blast");
         shocks.push({ x: shooter.x, y: shooter.y, t: 0, max: 140 * dpr, shield: true });
         shooter = null; nextShooter = elapsed + SHOOT_DUR + 14 + Math.random() * 10;
+      }
+    }
+
+    // slow powerup (classic, rare) — rewinds the swarm's speed by a few seconds
+    if (mode === "classic" && !slowmo && elapsed >= nextSlow) {
+      slowmo = { x: rand(w * 0.14, w * 0.86), y: rand(h * 0.16, h * 0.84), t: 0 };
+    }
+    if (slowmo) {
+      const dx = player.x - slowmo.x, dy = player.y - slowmo.y, reach = STAR_R * dpr + player.r;
+      if (dx * dx + dy * dy < reach * reach) {
+        speedSetback += SLOW_SETBACK; // roll the speed ramp back
+        audio.sfx("freeze");
+        shocks.push({ x: slowmo.x, y: slowmo.y, t: 0, max: 220 * dpr, ice: true });
+        slowmo = null; nextSlow = elapsed + 45 + Math.random() * 35;
       }
     }
 
@@ -990,10 +1049,11 @@
     // hunter-hunter forces (skipped while frozen) + lethal web check, one pass
     if (physics(dt, frozen) && takeHit()) { drawScene(); gameOver(); return; } // caught by a link
 
-    // shooter weapon — fire darts along the travel direction, destroy nodes on hit
+    // shooter weapon — fire darts straight, but each leaves the node at a random ±2°
     if (elapsed < shootUntil && elapsed >= nextBullet) {
       const bspd = 820 * dpr * arenaScale;
-      bullets.push({ x: player.x, y: player.y, vx: heading.x * bspd, vy: heading.y * bspd, life: 1.1 });
+      const ang = Math.atan2(heading.y, heading.x) + (Math.random() * 2 - 1) * (2 * Math.PI / 180);
+      bullets.push({ x: player.x, y: player.y, vx: Math.cos(ang) * bspd, vy: Math.sin(ang) * bspd, life: 1.1 });
       nextBullet = elapsed + BULLET_GAP;
       audio.sfx("pop");
     }
@@ -1281,6 +1341,22 @@
     ctx.shadowBlur = 0;
   }
 
+  // slow powerup — pale-blue clock with hands running backwards (rewind time/speed),
+  // visually distinct from the shooter's chevrons
+  function drawSlow(cx, cy, t) {
+    const R = (STAR_R + Math.sin(t * 5) * 1.5) * dpr;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.shadowColor = "rgba(150,210,255,0.9)"; ctx.shadowBlur = 18 * dpr;
+    ctx.strokeStyle = "rgba(195,230,255,0.96)"; ctx.lineWidth = 2.4 * dpr; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.arc(0, 0, R * 0.92, 0, 6.283185); ctx.stroke(); // clock face
+    const a = -t * 1.6; // counter-clockwise = winding back
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * R * 0.55, Math.sin(a) * R * 0.55); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a * 2 - 1.3) * R * 0.42, Math.sin(a * 2 - 1.3) * R * 0.42); ctx.stroke();
+    ctx.restore();
+    ctx.shadowBlur = 0;
+  }
+
   // player caught if within (its radius + half web width + kill-band) of segment a→b
   function segHitsPlayer(ax, ay, bx, by) {
     const vx = bx - ax, vy = by - ay;
@@ -1294,28 +1370,133 @@
   }
 
   // biome wash — translucent colour over the dark, transparent canvas (site bg shows through)
-  function drawBiome() {
-    if (!biome) return;
-    if (biome.tint) { // flat colour wash for a clear, distinct base hue
-      const [r, g, b, a] = biome.tint;
-      ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+  // draw one biome's wash at an alpha multiplier (am) — used to crossfade between biomes
+  function paintBiome(bm, am) {
+    if (!bm || am <= 0) return;
+    const D = Math.max(w, h);
+    if (bm.tint) { // flat colour wash for a clear, distinct base hue
+      const [r, g, b, a] = bm.tint;
+      ctx.fillStyle = `rgba(${r},${g},${b},${a * am})`;
       ctx.fillRect(0, 0, w, h);
     }
-    for (const [r, g, b, a, fx, fy, fs] of biome.glows) {
-      const cx = w * fx, cy = h * fy, rad = Math.max(w, h) * fs;
+    // defined glows — drift + pulse (lava-lamp motion)
+    let i = 0;
+    for (const [r, g, b, a, fx, fy, fs] of bm.glows) {
+      const ph = i * 1.7;
+      const cx = w * (fx + Math.sin(bgT * 0.11 + ph) * 0.16);
+      const cy = h * (fy + Math.cos(bgT * 0.085 + ph * 1.3) * 0.16);
+      const rad = D * fs * (1 + Math.sin(bgT * 0.14 + ph) * 0.18);
       const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
-      grd.addColorStop(0, `rgba(${r},${g},${b},${a})`);
+      grd.addColorStop(0, `rgba(${r},${g},${b},${a * am})`);
       grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
-      ctx.fillStyle = grd;
-      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+      i++;
     }
-    if (biome.vig) { // darken the edges to keep it grounded and dark
-      const v = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.34, w / 2, h / 2, Math.max(w, h) * 0.75);
+    // extra wandering mottle blobs drawn from the palette — more texture, always moving
+    const gl = bm.glows, mott = MOBILE ? 2 : 4;
+    for (let k = 0; k < mott; k++) {
+      const [r, g, b] = gl[k % gl.length];
+      const ph = k * 2.3 + 0.6;
+      const cx = w * (0.5 + Math.sin(bgT * 0.07 + ph) * 0.46);
+      const cy = h * (0.5 + Math.cos(bgT * 0.058 + ph * 1.6) * 0.46);
+      const rad = D * (0.3 + 0.16 * Math.sin(bgT * 0.09 + ph));
+      const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+      grd.addColorStop(0, `rgba(${r},${g},${b},${0.10 * am})`);
+      grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+    }
+    // dark drifting patches — carve out shadowed regions for more contrast
+    for (let k = 0; k < (MOBILE ? 2 : 3); k++) {
+      const ph = k * 3.1 + 1.4;
+      const cx = w * (0.5 + Math.sin(bgT * 0.063 + ph) * 0.46);
+      const cy = h * (0.5 + Math.cos(bgT * 0.05 + ph * 1.5) * 0.46);
+      const rad = D * (0.26 + 0.12 * Math.sin(bgT * 0.08 + ph));
+      const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+      grd.addColorStop(0, `rgba(4,3,10,${0.34 * am})`);
+      grd.addColorStop(1, "rgba(4,3,10,0)");
+      ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+    }
+    if (bm.vig) { // darken the edges to keep it grounded and dark
+      const v = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.34, w / 2, h / 2, D * 0.75);
       v.addColorStop(0, "rgba(6,5,12,0)");
-      v.addColorStop(1, `rgba(6,5,12,${biome.vig})`);
-      ctx.fillStyle = v;
-      ctx.fillRect(0, 0, w, h);
+      v.addColorStop(1, `rgba(6,5,12,${bm.vig * am})`);
+      ctx.fillStyle = v; ctx.fillRect(0, 0, w, h);
     }
+  }
+  // faint geometric pattern overlay — adds texture/variety on top of the colour wash;
+  // drifts slowly so it feels alive
+  function paintPattern(type, am) {
+    if (!type || type === "none" || am <= 0) return;
+    const a = 0.05 * am;
+    ctx.save();
+    ctx.strokeStyle = `rgba(255,255,255,${a})`;
+    ctx.fillStyle = `rgba(255,255,255,${a})`;
+    ctx.lineWidth = 1 * dpr;
+    const step = 64 * dpr;
+    const off = (bgT * 4) % step; // slow scroll
+    if (type === "grid") {
+      ctx.beginPath();
+      for (let x = off; x < w; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
+      for (let y = off; y < h; y += step) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
+      ctx.stroke();
+    } else if (type === "dots") {
+      const r = 1.6 * dpr;
+      for (let x = off; x < w + step; x += step) for (let y = off; y < h + step; y += step) {
+        ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283185); ctx.fill();
+      }
+    } else if (type === "rings") {
+      const cx = w / 2, cy = h / 2, max = Math.hypot(w, h);
+      ctx.beginPath();
+      for (let rad = (bgT * 6) % (step * 1.6) + 8; rad < max; rad += step * 1.6) { ctx.moveTo(cx + rad, cy); ctx.arc(cx, cy, rad, 0, 6.283185); }
+      ctx.stroke();
+    } else if (type === "diag") {
+      const gap = step * 1.4;
+      ctx.beginPath();
+      for (let x = -h + (off * 2); x < w; x += gap) { ctx.moveTo(x, 0); ctx.lineTo(x + h, h); }
+      ctx.stroke();
+    } else if (type === "weave") { // cross-hatch (both diagonals)
+      const gap = step * 1.4;
+      ctx.beginPath();
+      for (let x = -h + (off * 2); x < w; x += gap) { ctx.moveTo(x, 0); ctx.lineTo(x + h, h); ctx.moveTo(x + h, 0); ctx.lineTo(x, h); }
+      ctx.stroke();
+    } else if (type === "cross") { // small plus marks on a grid
+      const s = 5 * dpr;
+      for (let x = off; x < w + step; x += step) for (let y = off; y < h + step; y += step) {
+        ctx.beginPath(); ctx.moveTo(x - s, y); ctx.lineTo(x + s, y); ctx.moveTo(x, y - s); ctx.lineTo(x, y + s); ctx.stroke();
+      }
+    } else if (type === "wave") { // horizontal sine bands
+      for (let y = step; y < h; y += step) {
+        ctx.beginPath();
+        for (let x = 0; x <= w; x += 12 * dpr) {
+          const yy = y + Math.sin(x / (90 * dpr) + bgT * 0.4 + y) * 10 * dpr;
+          x === 0 ? ctx.moveTo(x, yy) : ctx.lineTo(x, yy);
+        }
+        ctx.stroke();
+      }
+    } else if (type === "hex") { // staggered dot lattice
+      const r = 1.7 * dpr; let row = 0;
+      for (let y = off; y < h + step; y += step * 0.86) {
+        const xo = (row % 2) * step / 2 + off;
+        for (let x = xo; x < w + step; x += step) { ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283185); ctx.fill(); }
+        row++;
+      }
+    }
+    ctx.restore();
+  }
+  let bgT = 0;
+  function drawBiome() {
+    bgT += 0.016; // own clock so the wash animates even on menus
+    if (biomeFade < 1 && prevBiome) paintBiome(prevBiome, 1 - biomeFade);
+    const f = biomeFade < 1 ? biomeFade : 1;
+    paintBiome(biome, f);
+    // patterns slowly breathe in and out on top of the wash
+    const pb = Math.max(0, Math.sin(bgT * 0.09));
+    if (biomeFade < 1 && prevBiome) paintPattern(prevPattern, (1 - biomeFade) * pb);
+    paintPattern(pattern, f * pb);
+    // time-of-day: darken the whole field at night (matches the site's day/night)
+    const d = new Date(), hour = d.getHours() + d.getMinutes() / 60;
+    const night = 0.8 * (1 - Math.max(0, Math.sin(((hour - 6) / 12) * Math.PI)));
+    if (night > 0.01) { ctx.fillStyle = `rgba(4,3,12,${night * 0.5})`; ctx.fillRect(0, 0, w, h); }
   }
 
   // transient wave/level title + small persistent progress label (non-classic modes)
@@ -1363,7 +1544,7 @@
     ctx.shadowBlur = 0;
     ctx.fillStyle = `hsla(${pauseHue},70%,80%,0.9)`;
     ctx.font = `500 ${15 * uiScale}px "General Sans", system-ui, sans-serif`;
-    ctx.fillText("press P / Space or tap to resume", w / 2, h * 0.46 + 36 * uiScale);
+    ctx.fillText(MOBILE ? "tap to resume" : "press P / Space or tap to resume", w / 2, h * 0.46 + 36 * uiScale);
     ctx.restore();
   }
 
@@ -1491,6 +1672,9 @@
     // shooter powerup
     if (shooter) { shooter.t += 0.04; drawShooter(shooter.x, shooter.y, shooter.t); }
 
+    // slow powerup
+    if (slowmo) { slowmo.t += 0.03; drawSlow(slowmo.x, slowmo.y, slowmo.t); }
+
     // darts in flight
     if (bullets.length) {
       ctx.save();
@@ -1579,6 +1763,7 @@
 
   async function loadBoard(myName) {
     if (!LB.url) { boardEl.innerHTML = '<li class="lb__empty">leaderboard not set up</li>'; return; }
+    boardEl.innerHTML = '<li class="lb__empty">loading…</li>'; // clear stale (other-mode) rows first
     try {
       // prefer the per-mode board; if the `mode` column isn't set up yet, fall back
       // to the legacy single board so the leaderboard keeps working.
@@ -1663,13 +1848,16 @@
     setPauseBtn();
   }
 
-  function toggleMute() { audio.resume(); const m = audio.toggleMute(); muteEl.textContent = m ? "🔇 muted (M)" : "🔊 sound on (M)"; }
+  const muteLabel = (m) => (m ? "🔇 Muted" : "🔊 Sound on") + (MOBILE ? "" : " (M)");
+  function toggleMute() { audio.resume(); muteEl.textContent = muteLabel(audio.toggleMute()); }
+  muteEl.textContent = muteLabel(false); // set initial label (drops "(M)" on mobile)
 
   // controls
   if (pauseBtn) pauseBtn.addEventListener("click", togglePause);
   muteEl.addEventListener("click", toggleMute);
   document.querySelectorAll(".mode-btn").forEach((b) => b.addEventListener("click", () => chooseMode(b.dataset.mode)));
   document.getElementById("retry-btn").addEventListener("click", start);
+  document.getElementById("restart-btn").addEventListener("click", () => { journeyIdx = 0; start(); }); // journey from level 1
   document.getElementById("plot-begin").addEventListener("click", start);
   document.getElementById("plot-back").addEventListener("click", backToMenu);
   document.getElementById("win-menu").addEventListener("click", backToMenu);

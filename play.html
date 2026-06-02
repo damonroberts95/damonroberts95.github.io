@@ -183,6 +183,8 @@
     }
     .mute:hover { color: var(--text); }
     .hint { font-size: 0.84rem; opacity: 0.8; }
+    /* keyboard-only hints — hidden on touch devices (no keyboard) */
+    @media (pointer: coarse) { .kbd-hint { display: none; } }
     /* journey finale title — bigger, rainbow sweep + glow pulse, scales in */
     .win-title {
       font-size: clamp(2.4rem, 9vw, 4.4rem) !important;
@@ -204,12 +206,12 @@
   <div class="hud" aria-hidden="true">
     <div class="hud__time" id="time">0.0</div>
     <div class="hud__pts">◆ <b id="pts">0</b></div>
-    <div class="hud__best">best<br><b id="best">0</b></div>
+    <div class="hud__best">Best<br><b id="best">0</b></div>
   </div>
 
-  <a class="home" href="/">&larr; back to site</a>
+  <a class="home" href="/">&larr; Back to site</a>
   <button class="pause-btn" id="pause-btn" aria-label="pause">&#10074;&#10074;</button>
-  <div class="mute" id="mute" aria-hidden="true">🔊 sound on (M)</div>
+  <div class="mute" id="mute" aria-hidden="true">🔊 Sound on</div>
 
   <!-- start -->
   <div class="panel" id="start">
@@ -245,9 +247,10 @@
       </div>
 
       <button class="btn" id="retry-btn">Run again</button>
+      <button class="btn btn--sm btn--ghost" id="restart-btn" hidden style="margin-left:10px">Start over</button>
       <button class="btn btn--sm btn--ghost" id="menu-btn" style="margin-left:10px">Menu</button>
       <button class="btn btn--sm btn--ghost" id="help-btn-over" style="margin-left:10px">How to play</button>
-      <p class="hint" style="margin-top:14px">press <kbd>R</kbd> to retry &middot; <kbd>Esc</kbd> for menu</p>
+      <p class="hint kbd-hint" style="margin-top:14px">press <kbd>R</kbd> to retry &middot; <kbd>Esc</kbd> for menu</p>
     </div>
   </div>
 
@@ -259,7 +262,7 @@
       <p class="big" id="plot-text"></p>
       <button class="btn" id="plot-begin">Begin</button>
       <button class="btn btn--sm btn--ghost" id="plot-back" style="margin-left:10px">Back</button>
-      <p class="hint" style="margin-top:12px"><kbd>Esc</kbd> for menu</p>
+      <p class="hint kbd-hint" style="margin-top:12px"><kbd>Esc</kbd> for menu</p>
     </div>
   </div>
 
@@ -301,7 +304,7 @@
         </ul>
 
         <h2>Keys</h2>
-        <p class="note"><kbd>M</kbd> mute &middot; <kbd>R</kbd> retry &middot; <kbd>Esc</kbd> back to site</p>
+        <p class="note kbd-hint"><kbd>M</kbd> mute &middot; <kbd>R</kbd> retry &middot; <kbd>Esc</kbd> back to site</p>
       </div>
 
       <button class="btn" id="help-back">Back</button>
