@@ -1258,17 +1258,26 @@
     ctx.restore();
   }
 
+  let pauseHue = 0;
   function drawPauseOverlay() {
+    pauseHue = (pauseHue + 1.6) % 360; // elapsed is frozen while paused → own clock
     ctx.save();
     ctx.fillStyle = "rgba(8,7,13,0.6)";
     ctx.fillRect(0, 0, w, h);
     ctx.textAlign = "center";
-    ctx.fillStyle = "rgba(255,255,255,0.95)";
-    ctx.font = `700 ${48 * uiScale}px "Clash Display", system-ui, sans-serif`;
+    const fs = 52 * uiScale;
+    ctx.font = `700 ${fs}px "Clash Display", system-ui, sans-serif`;
+    // rainbow sweep across the word
+    const tw = ctx.measureText("PAUSED").width;
+    const g = ctx.createLinearGradient(w / 2 - tw / 2, 0, w / 2 + tw / 2, 0);
+    for (let i = 0; i <= 6; i++) g.addColorStop(i / 6, `hsl(${(pauseHue + i * 60) % 360},95%,63%)`);
+    ctx.fillStyle = g;
+    ctx.shadowColor = `hsl(${pauseHue},95%,60%)`; ctx.shadowBlur = 26 * uiScale;
     ctx.fillText("PAUSED", w / 2, h * 0.46);
-    ctx.fillStyle = "rgba(185,182,207,0.9)";
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = `hsla(${pauseHue},70%,80%,0.9)`;
     ctx.font = `500 ${15 * uiScale}px "General Sans", system-ui, sans-serif`;
-    ctx.fillText("press P / Space or tap to resume", w / 2, h * 0.46 + 34 * uiScale);
+    ctx.fillText("press P / Space or tap to resume", w / 2, h * 0.46 + 36 * uiScale);
     ctx.restore();
   }
 
