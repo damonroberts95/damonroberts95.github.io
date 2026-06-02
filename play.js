@@ -308,10 +308,11 @@
     else if (edge === 2) { x = rand(0, w); y = h + 20 * dpr; }
     else { x = -20 * dpr; y = rand(0, h); }
     const color = PALETTE[(Math.random() * PALETTE.length) | 0];
+    const r0 = rand(2.6, 4.4) * dpr;
     hunters.push({
       id: hunterId++,
       x, y, vx: 0, vy: 0,
-      r: rand(2.6, 4.4) * dpr,
+      r: r0, r0, // r is the live (grown) radius; r0 the spawn base
       color,
       p: PERSONA[color],
       seed: rand(0, 6.283185), // phase offset so same-kind nodes desync
@@ -435,12 +436,15 @@
     player.vy = (player.y - player.py) / (dt || 0.016);
     player.px = player.x; player.py = player.y;
 
-    // difficulty ramps with time: more hunters fast, slightly slower speed
+    // difficulty ramps with time: more hunters fast, slightly slower speed.
+    // desktop ramps a touch harder (steeper speed/accel, more nodes); mobile eased.
     const sp = MOBILE ? 0.78 : 1;                 // ease speed on small screens
-    const maxSpeed = (90 + elapsed * 4) * dpr * sp;
-    const accel = (220 + elapsed * 9) * dpr * sp; // homing strength (chase the cursor)
-    const cap = MOBILE ? 32 : 100, rate = MOBILE ? 0.6 : 1; // fewer nodes, slower build on mobile
+    const maxSpeed = (90 + elapsed * (MOBILE ? 4 : 5)) * dpr * sp;
+    const accel = (220 + elapsed * (MOBILE ? 9 : 11)) * dpr * sp; // homing strength (chase the cursor)
+    const cap = MOBILE ? 32 : 130, rate = MOBILE ? 0.6 : 1.15; // fewer nodes, slower build on mobile
     const targetCount = Math.min(cap, 6 + Math.floor(elapsed * rate));
+    // nodes swell slightly the longer you survive → bigger targets, harder dodging
+    const grow = 1 + Math.min(0.5, elapsed / 90);
     // refill toward the target ONE node at a time on a cooldown — so a powerup
     // blast (or boss pop) thins the swarm for a while instead of backfilling
     // instantly next frame. The natural ramp is slower than this, so it's only
@@ -523,6 +527,7 @@
     // move + steer hunters per personality; old ones give up and fly off-screen
     const margin = 60 * dpr;
     for (const hn of hunters) {
+      hn.r = hn.r0 * grow; // swell over time
       const pdx = player.x - hn.x, pdy = player.y - hn.y; // toward the real player
       const pd = Math.hypot(pdx, pdy) || 1;
 
@@ -638,6 +643,10 @@
     const JR = JOLT_R * dpr, JR2 = JR * JR;
     const CR = COH_R * dpr, CR2 = CR * CR;
     const GR = GROUP_R * dpr * GROUP_SCALE, GR2 = GR * GR; // smaller "same clump" radius on mobile
+    // clumps pack tighter the longer you survive: same-colour cohesion strengthens
+    // and internal repulsion eases, while inter-colour repulsion scales up in step
+    // so the tighter balls still stay segregated into separate groups.
+    const tight = 1 + Math.min(1.3, elapsed / 45);
     const n = hunters.length;
     const cnt = new Array(n).fill(0), sx = new Array(n).fill(0), sy = new Array(n).fill(0);
     const scnt = new Array(n).fill(0); // same-colour clump-mates
@@ -654,8 +663,9 @@
         if (same && d2 < GR2) { scnt[i]++; scnt[j]++; }
         if (d2 < SEP2) {
           const d = Math.sqrt(d2), ux = dx / d, uy = dy / d;
-          // same colour barely repels (lets them pack tight); different colours shove hard
-          const f = (1 - d / SEP) * (same ? 90 : 1700) * dpr * dt;
+          // same colour barely repels (lets them pack tight, even tighter over time);
+          // different colours shove hard — and harder over time — to stay segregated
+          const f = (1 - d / SEP) * (same ? 90 / tight : 1700 * tight) * dpr * dt;
           a.vx -= ux * f; a.vy -= uy * f;
           b.vx += ux * f; b.vy += uy * f;
           const min = a.r + b.r;
@@ -669,13 +679,13 @@
           // nodes are free to chase the cursor). Crowded clump → members repel → split.
           const d = Math.sqrt(d2), ux = dx / d, uy = dy / d;
           const crowded = (a.snb || 0) >= (a.p.split || SPLIT_SIZE) || (b.snb || 0) >= (b.p.split || SPLIT_SIZE);
-          const cf = a.p.coh * (crowded ? -220 : 430) * dpr * dt;
+          const cf = a.p.coh * (crowded ? -220 : 430 * tight) * dpr * dt; // gather harder over time
           a.vx += ux * cf; a.vy += uy * cf;
           b.vx -= ux * cf; b.vy -= uy * cf;
         } else if (d2 < CR2) {
-          // differing colours shove apart at range → clumps segregate hard
+          // differing colours shove apart at range → clumps segregate hard (harder over time)
           const d = Math.sqrt(d2), ux = dx / d, uy = dy / d;
-          const rf = (1 - d / CR) * 400 * dpr * dt;
+          const rf = (1 - d / CR) * 400 * tight * dpr * dt;
           a.vx -= ux * rf; a.vy -= uy * rf;
           b.vx += ux * rf; b.vy += uy * rf;
         }
