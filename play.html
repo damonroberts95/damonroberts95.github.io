@@ -15,6 +15,7 @@
     /* ---- NODE RUN — dodge game (easter egg) ---- */
     html, body { height: 100%; overflow: hidden; }
     body.playing { cursor: none; } /* hide pointer only mid-run, not on menus */
+    body.paused { cursor: default; } /* but show it again while paused */
 
     #game {
       position: fixed; inset: 0;
@@ -136,6 +137,17 @@
     .lb__submit input:focus { border-color: var(--accent); }
     .btn--sm { margin: 0; padding: 8px 16px; font-size: 0.88rem; }
     .btn--ghost { background: transparent; border-color: var(--line); }
+    /* mode select */
+    .modes { display: grid; gap: 10px; margin: 18px 0 8px; }
+    .mode-btn {
+      margin: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+      text-align: left; padding: 12px 18px; width: 100%;
+    }
+    .mode-btn b { font-family: var(--font-display); font-size: 1.05rem; color: var(--text); }
+    .mode-btn span { font-size: 0.82rem; color: var(--muted); font-weight: 400; }
+    .mode-btn:hover span { color: var(--text); }
+    /* plot card */
+    .plot-stage { font-family: var(--font-display); font-size: 0.74rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
     .lb__status { font-size: 0.78rem; color: var(--muted); }
     /* how-to-play panel */
     .help { max-width: 420px; margin: 6px auto 0; text-align: left; }
@@ -155,11 +167,21 @@
       color: var(--muted); font-size: 0.82rem; pointer-events: auto;
     }
     .home:hover { color: var(--text); }
-    .mute {
-      position: fixed; right: 26px; bottom: 20px; z-index: 2;
-      color: var(--muted); font-size: 0.8rem; pointer-events: none;
-      font-family: var(--font-body);
+    /* pause button — only while playing, bottom-centre to avoid HUD */
+    .pause-btn {
+      position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 5;
+      display: none; pointer-events: auto; cursor: pointer;
+      font-size: 0.78rem; line-height: 1; color: var(--muted);
+      background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px;
     }
+    .pause-btn:hover { color: var(--text); border-color: var(--accent); }
+    body.playing .pause-btn { display: block; }
+    .mute {
+      position: fixed; right: 26px; bottom: 20px; z-index: 5;
+      color: var(--muted); font-size: 0.8rem; pointer-events: auto; cursor: pointer;
+      font-family: var(--font-body); user-select: none;
+    }
+    .mute:hover { color: var(--text); }
     .hint { font-size: 0.84rem; opacity: 0.8; }
   </style>
 </head>
@@ -174,6 +196,7 @@
   </div>
 
   <a class="home" href="/">&larr; back to site</a>
+  <button class="pause-btn" id="pause-btn" aria-label="pause">&#10074;&#10074;</button>
   <div class="mute" id="mute" aria-hidden="true">🔊 sound on (M)</div>
 
   <!-- start -->
@@ -181,9 +204,12 @@
     <div class="panel__card">
       <h1>NODE RUN</h1>
       <p class="big">The nodes want your cursor. Don't let them have it.</p>
-      <p class="hint">Dodge the nodes. Grab ◆ points (chain for ×combo), ★ blast, ❄ freeze, ⬡ shield. Beware the boss. <kbd>M</kbd> mutes.</p>
-      <button class="btn" id="start-btn">Start</button>
-      <button class="btn btn--sm btn--ghost" id="help-btn" style="margin-left:10px">How to play</button>
+      <div class="modes">
+        <button class="btn mode-btn" data-mode="classic"><b>Classic</b><span>Endless. Pure survival — outlast the swarm.</span></button>
+        <button class="btn mode-btn" data-mode="waves"><b>Waves</b><span>Themed waves of one colour, a boss every 5th.</span></button>
+        <button class="btn mode-btn" data-mode="journey"><b>Journey</b><span>Story levels through the Lattice.</span></button>
+      </div>
+      <button class="btn btn--sm btn--ghost" id="help-btn">How to play</button>
     </div>
   </div>
 
@@ -197,7 +223,7 @@
       <p class="hint" id="verdict">&nbsp;</p>
 
       <div class="lb">
-        <div class="lb__head">Leaderboard</div>
+        <div class="lb__head" id="lb-head">Leaderboard</div>
         <ol class="lb__list" id="board"><li class="lb__empty">&mdash;</li></ol>
         <div class="lb__submit" id="lb-submit" hidden>
           <input id="initials" maxlength="3" placeholder="AAA" autocomplete="off" spellcheck="false" />
@@ -207,8 +233,29 @@
       </div>
 
       <button class="btn" id="retry-btn">Run again</button>
+      <button class="btn btn--sm btn--ghost" id="menu-btn" style="margin-left:10px">Menu</button>
       <button class="btn btn--sm btn--ghost" id="help-btn-over" style="margin-left:10px">How to play</button>
-      <p class="hint" style="margin-top:14px">press <kbd>R</kbd> to retry &middot; <kbd>Esc</kbd> for home</p>
+      <p class="hint" style="margin-top:14px">press <kbd>R</kbd> to retry &middot; <kbd>Esc</kbd> for menu</p>
+    </div>
+  </div>
+
+  <!-- journey: plot card shown before each level -->
+  <div class="panel" id="plot" hidden>
+    <div class="panel__card">
+      <p class="plot-stage" id="plot-stage">Level 1 of 8</p>
+      <h1 id="plot-name" style="font-size:clamp(2rem,8vw,3.2rem)">Awakening</h1>
+      <p class="big" id="plot-text"></p>
+      <button class="btn" id="plot-begin">Begin</button>
+      <p class="hint" style="margin-top:12px"><kbd>Esc</kbd> for menu</p>
+    </div>
+  </div>
+
+  <!-- journey: completed all levels -->
+  <div class="panel" id="win" hidden>
+    <div class="panel__card">
+      <h1>THROUGH</h1>
+      <p class="big" id="win-text">You slip past the core and out beyond the grid's edge. The Lattice falls quiet behind you. For the first time, no one is chasing. You're free.</p>
+      <button class="btn" id="win-menu">Back to menu</button>
     </div>
   </div>
 
@@ -236,6 +283,7 @@
           <li><span class="ic">★</span><span><b>Star</b> — a blast wave that destroys every node it reaches.</span></li>
           <li><span class="ic">❄</span><span><b>Freeze</b> — freezes all nodes for a few seconds (their webs still kill).</span></li>
           <li><span class="ic">⬡</span><span><b>Shield</b> — absorbs one hit and shoves the swarm away.</span></li>
+          <li><span class="ic">»</span><span><b>Shooter</b> — auto-fires darts in your direction of travel for a few seconds, destroying nodes.</span></li>
           <li><span class="ic">◉</span><span><b>Boss</b> — the big spiked eye. It takes on the personality of its colour. Catch it in a star-blast to pop it into a swarm of its own colour (+50).</span></li>
         </ul>
 

@@ -29,6 +29,12 @@
   const initialsEl = document.getElementById("initials");
   const submitScoreBtn = document.getElementById("submit-score");
   const lbStatusEl = document.getElementById("lb-status");
+  const lbHeadEl = document.getElementById("lb-head");
+  const plotPanel = document.getElementById("plot");
+  const plotStageEl = document.getElementById("plot-stage");
+  const plotNameEl = document.getElementById("plot-name");
+  const plotTextEl = document.getElementById("plot-text");
+  const winPanel = document.getElementById("win");
 
   // Leaderboard via Supabase (free, HTTPS, no server). Paste your project URL
   // + anon (public) key below. The anon key is meant to be public; a row-level
@@ -69,10 +75,13 @@
     "255,248,120": { kind: "cluster", spd: 0.52, acc: 0.34, coh: 1.5, split: 6 },
   };
 
-  // score = 1 point per second survived + 10 per gem; best is the high score
-  const BEST_KEY = "noderun-best-score";
-  let best = parseFloat(localStorage.getItem(BEST_KEY) || "0") || 0;
-  bestEl.textContent = best.toFixed(1);
+  // score = 1 point per second survived + 10 per gem; best is the high score.
+  // best is tracked per mode; classic keeps the original key for continuity.
+  let mode = "classic"; // declared early: bestKey() reads it during initial loadBest()
+  const bestKey = () => (mode === "classic" ? "noderun-best-score" : "noderun-best-score-" + mode);
+  const loadBest = () => { best = parseFloat(localStorage.getItem(bestKey()) || "0") || 0; bestEl.textContent = best.toFixed(1); };
+  let best = 0;
+  loadBest();
 
   const audio = makeAudio();
 
@@ -80,7 +89,7 @@
      Supersaw voices + reverb + filter envelopes; tempo rises with
      elapsed so the music tracks the game's pace. ---- */
   function makeAudio() {
-    let ctx = null, master, mlp, music, fx, verb, noise, muted = false, playing = false, step = 0, nextNote = 0, timer = null, bright = false;
+    let ctx = null, master, mlp, music, fx, verb, vg, noise, muted = false, playing = false, step = 0, nextNote = 0, timer = null, bright = false;
     const CHORDS = [
       { root: 57, ivs: [0, 3, 7, 10] }, // Am7
       { root: 53, ivs: [0, 4, 7, 11] }, // Fmaj7
@@ -89,9 +98,39 @@
     ];
     const ARP = [0, 2, 3, 2, 1, 2, 3, 1, 0, 3, 2, 3, 1, 2, 0, 2];
     const mtof = (m) => 440 * 2 ** ((m - 69) / 12);
+
+    /* Per-biome music profiles — same vaporwave engine, tweaked for identity:
+       chords (mood), transpose (register), bright (master cutoff), reverb (space),
+       bpmMul (pace), leadType/leadCut (lead timbre), sparkle (shimmer layer). */
+    const PROFILES = {
+      default: { chords: CHORDS, transpose: 0, bright: 8500, reverb: 1.0, bpmMul: 1, leadType: "triangle", leadCut: 2100, sparkle: false },
+      // warm, mellow sunset
+      dusk:  { chords: [{ root: 53, ivs: [0, 4, 7, 11] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 50, ivs: [0, 3, 7, 10] }, { root: 55, ivs: [0, 4, 7, 10] }],
+               transpose: 0, bright: 6800, reverb: 1.2, bpmMul: 0.94, leadType: "triangle", leadCut: 1700, sparkle: false },
+      // deep, dark, spacious
+      void:  { chords: [{ root: 45, ivs: [0, 3, 7, 10] }, { root: 48, ivs: [0, 3, 7, 10] }, { root: 50, ivs: [0, 3, 7, 10] }, { root: 43, ivs: [0, 3, 7, 10] }],
+               transpose: -12, bright: 4600, reverb: 1.7, bpmMul: 0.88, leadType: "sine", leadCut: 1300, sparkle: false },
+      // tense, smouldering
+      ember: { chords: [{ root: 53, ivs: [0, 4, 7, 10] }, { root: 56, ivs: [0, 3, 7, 10] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 55, ivs: [0, 4, 7, 10] }],
+               transpose: 0, bright: 7200, reverb: 0.9, bpmMul: 1.06, leadType: "sawtooth", leadCut: 2400, sparkle: false },
+      // crystalline, bright, airy
+      ice:   { chords: [{ root: 60, ivs: [0, 4, 7, 11] }, { root: 62, ivs: [0, 4, 7, 11] }, { root: 59, ivs: [0, 3, 7, 10] }, { root: 57, ivs: [0, 4, 7, 11] }],
+               transpose: 0, bright: 12000, reverb: 1.5, bpmMul: 0.98, leadType: "sine", leadCut: 6000, sparkle: true },
+      // loud, bright, energetic
+      neon:  { chords: [{ root: 60, ivs: [0, 4, 7, 11] }, { root: 55, ivs: [0, 4, 7, 10] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 53, ivs: [0, 4, 7, 11] }],
+               transpose: 0, bright: 13000, reverb: 1.1, bpmMul: 1.12, leadType: "sawtooth", leadCut: 5200, sparkle: true },
+      // edgy, acidic minor
+      toxic: { chords: [{ root: 55, ivs: [0, 3, 7, 10] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 53, ivs: [0, 3, 7, 10] }, { root: 50, ivs: [0, 3, 7, 10] }],
+               transpose: 0, bright: 8000, reverb: 0.95, bpmMul: 1.05, leadType: "square", leadCut: 2600, sparkle: false },
+      // lush, dreamy, romantic
+      rose:  { chords: [{ root: 53, ivs: [0, 4, 7, 11] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 55, ivs: [0, 4, 7, 10] }, { root: 60, ivs: [0, 4, 7, 11] }],
+               transpose: 0, bright: 9200, reverb: 1.35, bpmMul: 1.0, leadType: "triangle", leadCut: 3000, sparkle: false },
+    };
+    let prof = PROFILES.default;
+
     const frozenNow = () => elapsed < frozenUntil;
     // crawls during freeze, very slow on menu/loss, eases up while playing
-    const curBPM = () => (frozenNow() ? 28 : running ? Math.min(132, 84 + elapsed * 0.6) : 40);
+    const curBPM = () => (frozenNow() ? 28 : running ? Math.min(132, 84 + elapsed * 0.6) * prof.bpmMul : 40);
 
     function impulse(dur, decay) {
       const len = Math.floor(ctx.sampleRate * dur);
@@ -105,7 +144,7 @@
       master = ctx.createGain(); master.gain.value = 0.8; master.connect(ctx.destination);
       mlp = ctx.createBiquadFilter(); mlp.type = "lowpass"; mlp.frequency.value = 8500; mlp.connect(master); // warm, less harsh
       verb = ctx.createConvolver(); verb.buffer = impulse(3.2, 2.4);
-      const vg = ctx.createGain(); vg.gain.value = 1.0; verb.connect(vg); vg.connect(mlp);
+      vg = ctx.createGain(); vg.gain.value = 1.0; verb.connect(vg); vg.connect(mlp);
       music = ctx.createGain(); music.gain.value = 0.17; music.connect(mlp); music.connect(verb);
       fx = ctx.createGain(); fx.gain.value = 0.5; fx.connect(mlp); fx.connect(verb);
       const len = Math.floor(ctx.sampleRate * 0.5);
@@ -158,7 +197,8 @@
     }
 
     function scheduleStep(s, t) {
-      const c = CHORDS[Math.floor(s / 16) % CHORDS.length], b = s % 16;
+      const set = prof.chords, tr = prof.transpose;
+      const c = set[Math.floor(s / 16) % set.length], b = s % 16;
       const pitch = frozenNow() ? 0.5 : 1; // drop an octave while frozen (deep + woozy)
       // kick on every beat — gentle four-on-the-floor pulse
       if (b % 4 === 0) {
@@ -169,19 +209,19 @@
         k.onended = () => { try { k.disconnect(); g.disconnect(); } catch {} };
       }
       // warm bass on the half-bar
-      if (b === 0 || b === 8) synth(mtof(c.root - 12) * pitch, t, 1.1, { gain: 0.26, detune: 6, voices: 2, cut: 440, q: 4, attack: 0.04, sub: true });
+      if (b === 0 || b === 8) synth(mtof(c.root - 12 + tr) * pitch, t, 1.1, { gain: 0.26, detune: 6, voices: 2, cut: 440, q: 4, attack: 0.04, sub: true });
       // lush pad swell
-      if (b === 0) c.ivs.forEach((iv) => synth(mtof(c.root + iv) * pitch, t, 2.5, { gain: 0.05, detune: 18, voices: 3, cut: 1300, q: 1.2, attack: 0.8 }));
-      // bouncier lead — more notes, plucky
+      if (b === 0) c.ivs.forEach((iv) => synth(mtof(c.root + iv + tr) * pitch, t, 2.5, { gain: 0.05, detune: 18, voices: 3, cut: 1300, q: 1.2, attack: 0.8 }));
+      // bouncier lead — more notes, plucky (timbre/brightness set by biome)
       if (b === 0 || b === 3 || b === 6 || b === 8 || b === 11 || b === 14) {
-        const note = c.root + c.ivs[ARP[b] % c.ivs.length] + 12;
-        synth(mtof(note) * pitch, t, 0.55, { type: "triangle", gain: 0.07, detune: 8, voices: 2, cut: 2100, q: 3, attack: 0.02 });
+        const note = c.root + c.ivs[ARP[b] % c.ivs.length] + 12 + tr;
+        synth(mtof(note) * pitch, t, 0.55, { type: prof.leadType, gain: 0.07, detune: 8, voices: 2, cut: prof.leadCut, q: 3, attack: 0.02 });
       }
       // offbeat hats keep it moving
       if (b % 2 === 1) noiseHit(t, 0.025, 0.014, music, 10000);
-      // shield active → bright sparkle layer an octave up (audible "powered" change)
-      if (bright && b % 2 === 0) {
-        const note = c.root + c.ivs[ARP[b] % c.ivs.length] + 24;
+      // shield active OR a sparkly biome → bright shimmer layer an octave up
+      if ((bright || prof.sparkle) && b % 2 === 0) {
+        const note = c.root + c.ivs[ARP[b] % c.ivs.length] + 24 + tr;
         synth(mtof(note) * pitch, t, 0.3, { type: "sine", gain: 0.05, detune: 4, voices: 2, cut: 9000, q: 1, attack: 0.01 });
       }
     }
@@ -192,9 +232,17 @@
       while (nextNote < ahead) { scheduleStep(step, nextNote); nextNote += 60 / curBPM() / 4; step++; }
     }
 
+    // ramp the master brightness + reverb to the current biome profile
+    function applyProf() {
+      if (!ctx) return;
+      mlp.frequency.setTargetAtTime(bright ? Math.max(prof.bright, 14000) : prof.bright, ctx.currentTime, 0.4);
+      if (vg) vg.gain.setTargetAtTime(prof.reverb, ctx.currentTime, 0.4);
+    }
+
     return {
       resume() { ensure(); if (ctx.state === "suspended") ctx.resume(); },
-      startMusic() { ensure(); if (playing) return; playing = true; step = 0; nextNote = ctx.currentTime + 0.1; timer = setInterval(tick, 25); },
+      startMusic() { ensure(); applyProf(); if (playing) return; playing = true; step = 0; nextNote = ctx.currentTime + 0.1; timer = setInterval(tick, 25); },
+      setBiome(key) { prof = PROFILES[key] || PROFILES.default; applyProf(); },
       sfx(name) {
         if (!ctx) return; const t = ctx.currentTime;
         if (name === "gem") {                 // rising shimmer arpeggio
@@ -217,7 +265,7 @@
         }
       },
       toggleMute() { if (!master) return false; muted = !muted; master.gain.setTargetAtTime(muted ? 0 : 0.8, ctx.currentTime, 0.02); return muted; },
-      setShield(on) { bright = on; if (mlp) mlp.frequency.setTargetAtTime(on ? 16000 : 8500, ctx.currentTime, 0.12); },
+      setShield(on) { bright = on; if (mlp) mlp.frequency.setTargetAtTime(on ? 16000 : prof.bright, ctx.currentTime, 0.12); },
     };
   }
 
@@ -227,14 +275,37 @@
   const LINK_SCALE = MOBILE ? 0.6 : 1;   // shorter webs on small screens → fewer lethal lines, more gaps
   const GROUP_SCALE = MOBILE ? 0.7 : 1;  // tighter clumps on small screens → nodes ball up, opening dodge lanes
 
-  let w, h, dpr = 1, linkD2;
+  let w, h, dpr = 1, linkD2, arenaScale = 1, uiScale = 1;
   function resize() {
+    const oldW = w, oldH = h;
     dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     w = canvas.width = Math.floor(innerWidth * dpr);
     h = canvas.height = Math.floor(innerHeight * dpr);
     canvas.style.width = innerWidth + "px";
     canvas.style.height = innerHeight + "px";
-    linkD2 = (LINK_DIST * LINK_SCALE * dpr) ** 2;
+    // resolution/zoom independence: a larger viewport (zoomed out, big monitor)
+    // would otherwise feel slower & sparser since speeds/reach are fixed px. Scale
+    // motion and web reach with the viewport so difficulty stays consistent.
+    arenaScale = Math.max(0.8, Math.min(2, Math.min(innerWidth, innerHeight) / 820));
+    linkD2 = (LINK_DIST * LINK_SCALE * arenaScale * dpr) ** 2;
+    // on-canvas UI (banner/labels) sized off DEVICE dimensions, not dpr, so it stays
+    // a sensible physical size when zoomed out (where dpr shrinks but the screen doesn't).
+    uiScale = Math.max(0.9, Math.min(2, Math.min(w, h) / 780));
+    // remap every position to the new dimensions so a mid-run zoom/resize doesn't
+    // throw entities out of the (rescaled) coordinate space and break the game.
+    // (guarded by oldW so it never runs on the first call, before state exists)
+    if (oldW && oldH && (oldW !== w || oldH !== h)) {
+      const sx = w / oldW, sy = h / oldH;
+      const sc = (o) => { if (o) { o.x *= sx; o.y *= sy; } };
+      player.r = 7 * dpr;
+      sc(player); player.px *= sx; player.py *= sy;
+      for (const hn of hunters) { hn.x *= sx; hn.y *= sy; }
+      for (const g of gems) { g.x *= sx; g.y *= sy; }
+      for (const bl of bullets) { bl.x *= sx; bl.y *= sy; }
+      for (const s of shocks) { s.x *= sx; s.y *= sy; }
+      sc(star); sc(ice); sc(shield); sc(shooter); sc(boss);
+      if (anchor) { anchor.fx *= sx; anchor.fy *= sy; anchor.px *= sx; anchor.py *= sy; }
+    }
   }
   resize();
   addEventListener("resize", resize);
@@ -245,7 +316,14 @@
   let anchor = null; // touch: where the finger + player were when the drag began
   const clamp01 = (v, hi) => (v < 0 ? 0 : v > hi ? hi : v);
 
+  let lastDown = -1e9;
   function startTouch(e) {
+    // ignore taps on UI controls (the button's own click handles them) so we
+    // don't double-toggle, and dedupe the pointerdown+touchstart pair for one tap
+    if (e.target && e.target.closest && e.target.closest("button, a, .mute")) return;
+    if (e.timeStamp - lastDown < 120) return;
+    lastDown = e.timeStamp;
+    if (paused) { togglePause(); return; } // tap anywhere (not a control) to resume
     const t = e.touches ? e.touches[0] : e;
     if (!t) return;
     anchor = (e.touches || e.pointerType === "touch")
@@ -275,7 +353,7 @@
   let links = []; // {a,b,al,same} built in physics, drawn in drawScene (one pass, not two)
   let linkAges = new Map();   // "idA|idB" -> seconds that web has existed
   const WEB_GRACE = 0.32;     // s: a freshly-formed web can't kill until it settles
-  let running = false, dead = false;
+  let running = false, dead = false, paused = false;
   let elapsed = 0, lastT = 0, startT = 0;
   let shocks = [];            // {x, y, t, max} expanding ring visuals
   let star = null;            // {x, y, t} collectable rainbow powerup (blast)
@@ -295,7 +373,67 @@
   const COMBO_WINDOW = 2.4, MULT_MAX = 8;
   let shield = null, nextShield = 0; // {x,y,t} collectable
   let shieldActive = false, invulnUntil = 0; // shield absorbs one hit + brief i-frames
+  let shooter = null, nextShooter = 0; // {x,y,t} collectable — temp auto-fire weapon
+  let shootUntil = 0, nextBullet = 0;  // armed window + dart cadence
+  let bullets = [];                    // {x,y,vx,vy,life} darts fired along travel
+  const heading = { x: 1, y: 0 };      // last significant travel direction
+  const SHOOT_DUR = 6, BULLET_GAP = 0.1;
   let boss = null, nextBoss = 0; // big slow hunter
+
+  // ---- modes: classic (endless), waves (themed waves), journey (story levels) ----
+  // `mode` is declared near the top (needed during initial loadBest()).
+  let wave = 0, waveEndsAt = 0, waveType = "themed"; // waves mode
+  let themeColor = null;            // dominant spawn colour this wave/level (null = all)
+  let bossWave = false;             // current wave/level features the boss
+  let journeyIdx = 0, levelEndsAt = 0; // journey mode
+  let banner = null;                // {big, sub, until} transient on-canvas wave/level title
+  let biome = null;                 // current biome (visual theme)
+  const WAVE_LEN = 18;              // seconds per wave (survive to advance)
+
+  const PERSONA_NAME = {
+    "199,116,232": "Chasers", "255,106,213": "Ambushers", "34,211,238": "Erratics",
+    "255,138,96": "The Shy", "120,196,255": "Scatterers", "255,248,120": "The Hive",
+  };
+
+  // Biomes — a full-screen colour tint plus vibrant radial glows drawn over the
+  // (transparent) canvas; the site's day/night bg still shows faintly through. Kept
+  // dark-but-saturated so each reads distinctly. tint: [r,g,b,alpha] flat wash;
+  // glows: [r,g,b,alpha,xfrac,yfrac,sizefrac]; vig = edge-darken alpha.
+  const BIOMES = {
+    dusk:  { name: "Dusk",  vig: 0.40, tint: [40, 14, 36, 0.30], glows: [[255,120,40,0.26,0.5,1.15,1.2], [210,70,180,0.20,0.18,-0.08,1.0], [120,60,220,0.14,0.85,0.1,0.9]] },
+    void:  { name: "Void",  vig: 0.58, tint: [16, 12, 40, 0.40], glows: [[90,50,210,0.24,0.5,0.45,1.4], [40,30,120,0.20,0.15,1.05,1.1]] },
+    ember: { name: "Ember", vig: 0.46, tint: [44, 10, 8, 0.34], glows: [[255,60,40,0.30,0.3,1.08,1.1], [255,150,30,0.22,0.82,1.05,0.9], [255,40,90,0.16,0.5,-0.05,0.9]] },
+    ice:   { name: "Ice",   vig: 0.34, tint: [10, 26, 46, 0.32], glows: [[90,200,255,0.28,0.5,-0.08,1.2], [60,130,230,0.20,0.5,1.12,1.0], [150,240,255,0.14,0.15,0.4,0.8]] },
+    neon:  { name: "Neon",  vig: 0.34, tint: [22, 8, 38, 0.32], glows: [
+      [255,30,200,0.30,0.16,0.16,0.8], [30,235,255,0.30,0.86,0.22,0.8],
+      [160,50,255,0.24,0.5,0.94,0.9], [60,255,170,0.18,0.1,0.86,0.7], [255,215,40,0.16,0.92,0.86,0.6],
+    ] },
+    toxic: { name: "Toxic", vig: 0.42, tint: [10, 30, 8, 0.32], glows: [[120,255,60,0.28,0.5,-0.06,1.2], [80,200,40,0.22,0.18,1.08,1.0], [210,255,90,0.15,0.86,0.42,0.8]] },
+    rose:  { name: "Rose",  vig: 0.38, tint: [42, 8, 26, 0.32], glows: [[255,40,120,0.30,0.3,-0.05,1.1], [255,100,170,0.22,0.82,1.05,0.9], [200,30,100,0.16,0.5,0.95,0.9]] },
+  };
+  const BIOME_KEYS = ["dusk", "ice", "ember", "void", "neon", "toxic", "rose"];
+  let lastBiome = null; // avoid immediate repeats when picking randomly
+
+  // Journey — a light run through "the Lattice". Each level: dominant colour,
+  // survive seconds, optional boss, a biome, and a line of plot shown before it.
+  const JOURNEY = [
+    { name: "Awakening",  color: "199,116,232", len: 35, boss: false, biome: "dusk",
+      plot: "You wake as a stray node in the Lattice — a living grid of data. The Chasers turn toward you. Run." },
+    { name: "The Ambush", color: "255,106,213", len: 36, boss: false, biome: "rose",
+      plot: "Word spreads through the mesh. The Ambushers learn your habits, cutting ahead of every move you make." },
+    { name: "Static",     color: "34,211,238",  len: 38, boss: false, biome: "ice",
+      plot: "Deeper in, the signal frays. Erratics spiral around you, never quite where you expect." },
+    { name: "The Timid",  color: "255,138,96",  len: 38, boss: false, biome: "toxic",
+      plot: "The Shy ones swarm and flinch — bold from afar, panicked up close. Use their fear." },
+    { name: "Drift",      color: "120,196,255", len: 40, boss: false, biome: "void",
+      plot: "Out in the open field the Scatterers roam, barely chasing. Calm — but the webs between them still bite." },
+    { name: "The Hive",   color: "255,248,120", len: 40, boss: false, biome: "ember",
+      plot: "The Hive packs tight and grows as one. Whole clusters drift together. Thread the gaps." },
+    { name: "The Warden", color: "199,116,232", len: 42, boss: true,  biome: "void",
+      plot: "A Warden node guards the gateway. Outlast it — catch it in a blast to break it open." },
+    { name: "Confluence", color: null,          len: 45, boss: true,  biome: "neon",
+      plot: "Every colour converges on the core. Reach the edge of the grid. One last run." },
+  ];
 
   function rand(a, b) { return a + Math.random() * (b - a); }
 
@@ -307,7 +445,10 @@
     else if (edge === 1) { x = w + 20 * dpr; y = rand(0, h); }
     else if (edge === 2) { x = rand(0, w); y = h + 20 * dpr; }
     else { x = -20 * dpr; y = rand(0, h); }
-    const color = PALETTE[(Math.random() * PALETTE.length) | 0];
+    // themed waves/levels bias most spawns to the theme colour for a clear identity
+    const color = (themeColor && Math.random() < 0.72)
+      ? themeColor
+      : PALETTE[(Math.random() * PALETTE.length) | 0];
     const r0 = rand(2.6, 4.4) * dpr;
     hunters.push({
       id: hunterId++,
@@ -341,22 +482,30 @@
     mult = 1; comboUntil = 0;
     shield = null; nextShield = 16 + Math.random() * 10;
     shieldActive = false; invulnUntil = 0;
+    shooter = null; nextShooter = 18 + Math.random() * 10;
+    shootUntil = 0; nextBullet = 0; bullets = [];
+    heading.x = 1; heading.y = 0;
     boss = null; nextBoss = 24 + Math.random() * 14;
     audio.setShield(false);
     player.x = w / 2; player.y = h / 2;
     dead = false;
+    // per-mode setup
+    wave = 0; themeColor = null; bossWave = false; banner = null; biome = null;
+    if (mode === "waves") nextWave(0);
+    else if (mode === "journey") setupJourneyLevel();
+    else audio.setBiome(null); // classic → default music theme
     for (let i = 0; i < 3; i++) spawnHunter();
   }
 
   const BOSS_VAL = 50; // points for destroying the boss
-  function spawnBoss() {
+  function spawnBoss(forceColor) {
     const edge = (Math.random() * 4) | 0;
     let x, y;
     if (edge === 0) { x = rand(0, w); y = -30 * dpr; }
     else if (edge === 1) { x = w + 30 * dpr; y = rand(0, h); }
     else if (edge === 2) { x = rand(0, w); y = h + 30 * dpr; }
     else { x = -30 * dpr; y = rand(0, h); }
-    const color = PALETTE[(Math.random() * PALETTE.length) | 0];
+    const color = forceColor || PALETTE[(Math.random() * PALETTE.length) | 0];
     boss = { x, y, vx: 0, vy: 0, r: 22 * dpr, t: 0, color, p: PERSONA[color], seed: rand(0, 6.283185) };
   }
 
@@ -377,6 +526,84 @@
         safe: elapsed + 0.6, // can't kill the player for a beat after popping out
       });
     }
+  }
+
+  // ---- mode flow ----
+
+  // waves: advance to the next wave (called at reset for wave 1, then on timer).
+  // Flavours: themed (one colour), mixed (all colours, like classic), special
+  // (a powerup/gem cache — a reward breather), and a boss every 5th wave.
+  function nextWave(now) {
+    wave++;
+    bossWave = wave % 5 === 0;
+    // random biome each wave (no immediate repeat)
+    let bkey = BIOME_KEYS[(Math.random() * BIOME_KEYS.length) | 0];
+    if (bkey === lastBiome) bkey = BIOME_KEYS[(BIOME_KEYS.indexOf(bkey) + 1) % BIOME_KEYS.length];
+    lastBiome = bkey;
+    biome = BIOMES[bkey];
+    audio.setBiome(bkey);
+    waveEndsAt = now + WAVE_LEN;
+    boss = null; // clear any boss that outlived the previous wave
+    let sub;
+    if (bossWave) {
+      waveType = "boss";
+      themeColor = PALETTE[(Math.random() * PALETTE.length) | 0];
+      spawnBoss(themeColor);
+      while (hunters.length < (MOBILE ? 12 : 18)) spawnHunter(); // a proper swarm alongside the boss
+      sub = "BOSS · " + (PERSONA_NAME[themeColor] || "");
+    } else {
+      const roll = Math.random();
+      waveType = roll < 0.18 ? "special" : roll < 0.5 ? "mixed" : "themed";
+      if (waveType === "themed") {
+        themeColor = PALETTE[(Math.random() * PALETTE.length) | 0];
+        sub = PERSONA_NAME[themeColor] || "";
+      } else {
+        themeColor = null; // all colours
+        sub = waveType === "special" ? "POWER CACHE" : "Mixed";
+        if (waveType === "special") startSpecial(now);
+      }
+    }
+    banner = { big: "WAVE " + wave, sub, until: now + 2.4 };
+  }
+
+  // special wave: scatter gems and front-load the powerups (incl. the shooter)
+  function startSpecial(now) {
+    for (let i = 0; i < 8; i++) gems.push({ x: rand(w * 0.1, w * 0.9), y: rand(h * 0.12, h * 0.88), t: 0 });
+    nextStar = now + 1.5;
+    nextShield = now + 3;
+    nextShooter = now + 0.8;
+    nextIce = now + 5.5;
+  }
+
+  // journey: configure the arena for the current level (elapsed has just reset to 0)
+  function setupJourneyLevel() {
+    const L = JOURNEY[journeyIdx];
+    themeColor = L.color;
+    bossWave = !!L.boss;
+    biome = BIOMES[L.biome] || null;
+    audio.setBiome(L.biome);
+    levelEndsAt = L.len;
+    banner = { big: L.name, sub: themeColor ? PERSONA_NAME[themeColor] : "All colours", until: 2.4 };
+    if (L.boss) { boss = null; spawnBoss(themeColor || undefined); while (hunters.length < (MOBILE ? 12 : 18)) spawnHunter(); }
+  }
+
+  // journey: a level's timer elapsed → next plot card, or the win screen
+  function levelComplete() {
+    running = false;
+    audio.sfx("shield"); // little fanfare
+    journeyIdx++;
+    if (journeyIdx >= JOURNEY.length) { winPanel.hidden = false; document.body.classList.remove("playing"); }
+    else showPlot();
+  }
+
+  // journey: show the plot card for the upcoming level (Begin → start())
+  function showPlot() {
+    const L = JOURNEY[journeyIdx];
+    plotStageEl.textContent = "Level " + (journeyIdx + 1) + " of " + JOURNEY.length;
+    plotNameEl.textContent = L.name;
+    plotTextEl.textContent = L.plot;
+    document.body.classList.remove("playing");
+    plotPanel.hidden = false;
   }
 
   // a lethal touch — consumed by shield + i-frames; returns true if it kills
@@ -409,9 +636,11 @@
     startPanel.hidden = true;
     overPanel.hidden = true;
     helpPanel.hidden = true;
+    plotPanel.hidden = true;
+    winPanel.hidden = true;
     document.body.classList.add("playing"); // hide cursor mid-run
     playerAlpha = 0; // fade the player in
-    running = true;
+    running = true; paused = false; document.body.classList.remove("paused"); setPauseBtn();
     startT = -1; // stamp on first frame (no Date.now needed)
     requestAnimationFrame(loop);
   }
@@ -425,30 +654,43 @@
     finalEl.textContent = elapsed.toFixed(1);
     finalPtsEl.textContent = points;
     finalScoreEl.textContent = score.toFixed(1);
-    // leaderboard: record this run, show the board + submit box
+    // leaderboard: record this run (per mode), show the board + submit box
     lastRun = { score, time: elapsed, points };
     lbStatusEl.textContent = "";
     submitScoreBtn.disabled = false;
     lbSubmitEl.hidden = false; // always show the button; it submits THIS run only
+    const modeName = mode === "waves" ? "Waves" : mode === "journey" ? "Journey" : "Classic";
+    let reach = "";
+    if (mode === "waves") reach = "Reached wave " + wave + " · ";
+    else if (mode === "journey") reach = "Level " + (journeyIdx + 1) + " — " + JOURNEY[journeyIdx].name + " · ";
+    if (lbHeadEl) lbHeadEl.textContent = modeName + " leaderboard";
     loadBoard();
-    if (score > best) {
+    const isBest = score > best;
+    if (isBest) {
       best = score;
-      localStorage.setItem(BEST_KEY, best.toFixed(2));
+      localStorage.setItem(bestKey(), best.toFixed(2));
       bestEl.textContent = best.toFixed(1);
-      verdictEl.textContent = "New best! 🏆";
-    } else {
-      verdictEl.textContent = "Best " + best.toFixed(1);
     }
+    verdictEl.textContent = reach + (isBest ? "New best! 🏆" : "Best " + best.toFixed(1));
     overPanel.hidden = false;
   }
 
   function loop(now) {
     if (!running) return;
     if (startT < 0) { startT = now; lastT = now; }
+    if (paused) { // freeze elapsed (so it doesn't jump on resume), hold the frame, show overlay
+      startT += now - lastT; lastT = now;
+      drawScene(); drawPauseOverlay();
+      requestAnimationFrame(loop);
+      return;
+    }
     const dt = Math.min(0.05, (now - lastT) / 1000); // clamp big tab-switch gaps
     lastT = now;
     elapsed = (now - startT) / 1000;
-    timeEl.textContent = elapsed.toFixed(1);
+    // classic counts up (survival); waves/journey count DOWN to the wave/level end
+    timeEl.textContent = mode === "waves" ? Math.max(0, waveEndsAt - elapsed).toFixed(1)
+      : mode === "journey" ? Math.max(0, levelEndsAt - elapsed).toFixed(1)
+      : elapsed.toFixed(1);
     playerAlpha = Math.min(1, playerAlpha + dt * 2.4); // fade-in
     if (playerAlpha > 0.05) { trail.push({ x: player.x, y: player.y }); if (trail.length > 24) trail.shift(); }
 
@@ -456,14 +698,40 @@
     player.vx = (player.x - player.px) / (dt || 0.016);
     player.vy = (player.y - player.py) / (dt || 0.016);
     player.px = player.x; player.py = player.y;
+    // remember the last real travel direction (drives the shooter's aim)
+    const psp = Math.hypot(player.vx, player.vy);
+    if (psp > 8 * dpr) { heading.x = player.vx / psp; heading.y = player.vy / psp; }
+
+    // mode progression: advance waves / complete journey levels on their timers
+    if (mode === "waves" && elapsed >= waveEndsAt) nextWave(elapsed);
+    else if (mode === "journey" && elapsed >= levelEndsAt) { levelComplete(); return; }
 
     // difficulty ramps with time: more hunters fast, slightly slower speed.
     // desktop ramps a touch harder (steeper speed/accel, more nodes); mobile eased.
     const sp = MOBILE ? 0.78 : 1;                 // ease speed on small screens
-    const maxSpeed = (90 + elapsed * (MOBILE ? 4 : 5)) * dpr * sp;
-    const accel = (220 + elapsed * (MOBILE ? 9 : 11)) * dpr * sp; // homing strength (chase the cursor)
-    const cap = MOBILE ? 32 : 130, rate = MOBILE ? 0.6 : 1.15; // fewer nodes, slower build on mobile
-    const targetCount = Math.min(cap, 6 + Math.floor(elapsed * rate));
+    let maxSpeed, accel;
+    if (mode === "waves") {
+      // Waves: ramp off time-INTO-the-current-wave (resets each wave → speed steps
+      // down at every wave start), with a gentle per-wave base so it rises overall.
+      const into = Math.max(0, elapsed - (waveEndsAt - WAVE_LEN)); // 0..WAVE_LEN
+      const baseS = 90 + Math.min(120, (wave - 1) * 8);
+      const baseA = 200 + Math.min(180, (wave - 1) * 12);
+      maxSpeed = (baseS + into * (MOBILE ? 1.2 : 1.5)) * dpr * sp * arenaScale;
+      accel = (baseA + into * (MOBILE ? 2.4 : 3)) * dpr * sp * arenaScale;
+    } else {
+      // Classic/Journey: ramp with elapsed; journey escalates a touch per level.
+      const diff = mode === "journey" ? 1 + journeyIdx * 0.045 : 1;
+      maxSpeed = (90 + elapsed * (MOBILE ? 4 : 5)) * dpr * sp * arenaScale * diff;
+      accel = (220 + elapsed * (MOBILE ? 9 : 11)) * dpr * sp * arenaScale * diff;
+    }
+    const cap = Math.round((MOBILE ? 32 : 130) * arenaScale), rate = MOBILE ? 0.6 : 1.15; // more nodes on bigger arenas
+    // Journey resets elapsed each level, so it would re-ramp from sparse every time.
+    // Start fuller, ramp faster, and escalate the floor with the level number.
+    const jBase = mode === "journey" ? 4 + journeyIdx : 0;
+    const jRate = mode === "journey" ? 1.25 : 1;
+    let targetCount = Math.min(cap, 6 + jBase + Math.floor(elapsed * rate * jRate));
+    if (bossWave) targetCount = Math.min(targetCount, MOBILE ? 14 : 22); // thin the swarm so the boss is the threat
+    else if (waveType === "special") targetCount = Math.min(targetCount, MOBILE ? 18 : 30); // calmer reward wave
     // nodes swell the longer you survive → bigger targets, harder dodging (capped at 3x)
     const grow = 1 + Math.min(2, elapsed / 90);
     // refill toward the target ONE node at a time on a cooldown — so a powerup
@@ -472,7 +740,8 @@
     // throttled right after a big kill.
     if (hunters.length < targetCount && elapsed >= nextSpawn) {
       spawnHunter();
-      nextSpawn = elapsed + SPAWN_GAP;
+      // journey fills faster, waves a bit slower (killed enemies don't snap back)
+      nextSpawn = elapsed + (mode === "journey" ? 0.42 : mode === "waves" ? 0.9 : SPAWN_GAP);
     }
 
     // spawn a rainbow star now and then; collect it by touching it
@@ -538,8 +807,22 @@
       }
     }
 
+    // shooter powerup — collect to auto-fire darts along your travel for a few seconds
+    if (!shooter && elapsed >= shootUntil && elapsed >= nextShooter) {
+      shooter = { x: rand(w * 0.14, w * 0.86), y: rand(h * 0.16, h * 0.84), t: 0 };
+    }
+    if (shooter) {
+      const dx = player.x - shooter.x, dy = player.y - shooter.y, reach = STAR_R * dpr + player.r;
+      if (dx * dx + dy * dy < reach * reach) {
+        shootUntil = elapsed + SHOOT_DUR;
+        audio.sfx("blast");
+        shocks.push({ x: shooter.x, y: shooter.y, t: 0, max: 140 * dpr, shield: true });
+        shooter = null; nextShooter = elapsed + SHOOT_DUR + 14 + Math.random() * 10;
+      }
+    }
+
     // boss — occasional big slow hunter
-    if (!boss && elapsed >= nextBoss) spawnBoss();
+    if (mode === "classic" && !boss && elapsed >= nextBoss) spawnBoss(); // waves/journey place bosses themselves
 
     const frozen = elapsed < frozenUntil;
 
@@ -567,7 +850,7 @@
         // each personality aims at a different target point
         let tx = player.x, ty = player.y;
         if (p.kind === "ambush") {            // Pinky: lead further ahead of the player
-          tx = player.x + player.vx * 0.7; ty = player.y + player.vy * 0.7;
+          tx = player.x + player.vx * 1.3; ty = player.y + player.vy * 1.3;
         } else if (p.kind === "erratic") {    // Inky: wide, fast wobble orbit
           const a = hn.age * 3.2 + hn.seed;
           tx = player.x + Math.cos(a) * 210 * dpr; ty = player.y + Math.sin(a * 1.25) * 210 * dpr;
@@ -614,7 +897,7 @@
         const p = boss.p;
         let tx = player.x, ty = player.y;             // default: straight chase
         if (p.kind === "ambush") {                    // lead the player's motion
-          tx = player.x + player.vx * 0.7; ty = player.y + player.vy * 0.7;
+          tx = player.x + player.vx * 1.3; ty = player.y + player.vy * 1.3;
         } else if (p.kind === "erratic") {            // wobble orbit around the player
           const a = boss.t * 2.4 + boss.seed;
           tx = player.x + Math.cos(a) * 200 * dpr; ty = player.y + Math.sin(a * 1.25) * 200 * dpr;
@@ -626,7 +909,7 @@
         const bd0 = Math.hypot(player.x - boss.x, player.y - boss.y) || 1;
         if (p.kind === "shy" && bd0 < 300 * dpr) { tdx = boss.x - player.x; tdy = boss.y - player.y; } // bolt when close
         const td = Math.hypot(tdx, tdy) || 1;
-        const bms = (60 + elapsed * 2) * dpr * p.spd; // persona scales the boss's top speed
+        const bms = (60 + elapsed * 2) * dpr * p.spd * arenaScale; // persona scales the boss's top speed
         boss.vx += (tdx / td) * 120 * dpr * p.acc * dt;
         boss.vy += (tdy / td) * 120 * dpr * p.acc * dt;
         const bsp = Math.hypot(boss.vx, boss.vy);
@@ -642,6 +925,30 @@
 
     // hunter-hunter forces (skipped while frozen) + lethal web check, one pass
     if (physics(dt, frozen) && takeHit()) { drawScene(); gameOver(); return; } // caught by a link
+
+    // shooter weapon — fire darts along the travel direction, destroy nodes on hit
+    if (elapsed < shootUntil && elapsed >= nextBullet) {
+      const bspd = 820 * dpr * arenaScale;
+      bullets.push({ x: player.x, y: player.y, vx: heading.x * bspd, vy: heading.y * bspd, life: 1.1 });
+      nextBullet = elapsed + BULLET_GAP;
+      audio.sfx("pop");
+    }
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      const bl = bullets[i];
+      bl.x += bl.vx * dt; bl.y += bl.vy * dt; bl.life -= dt;
+      if (bl.life <= 0 || bl.x < -30 || bl.x > w + 30 || bl.y < -30 || bl.y > h + 30) { bullets.splice(i, 1); continue; }
+      for (let j = hunters.length - 1; j >= 0; j--) {
+        const hn = hunters[j];
+        const dx = hn.x - bl.x, dy = hn.y - bl.y, rr = hn.r + 5 * dpr;
+        if (dx * dx + dy * dy < rr * rr) {
+          hunters.splice(j, 1);
+          points += KILL_VAL; ptsEl.textContent = String(points);
+          shocks.push({ x: bl.x, y: bl.y, t: 0, max: 46 * dpr });
+          bullets.splice(i, 1);
+          break;
+        }
+      }
+    }
 
     drawScene();
     requestAnimationFrame(loop);
@@ -881,6 +1188,27 @@
     ctx.shadowBlur = 0;
   }
 
+  // shooter powerup — bright green double-chevron, spinning + glowing
+  function drawShooter(cx, cy, t) {
+    const R = (STAR_R + Math.sin(t * 5) * 1.5) * dpr;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(t * 0.6);
+    ctx.shadowColor = "rgba(120,255,190,0.9)"; ctx.shadowBlur = 18 * dpr;
+    ctx.fillStyle = "rgba(170,255,215,0.96)";
+    for (let k = 0; k < 2; k++) {
+      const off = (k - 0.3) * R * 0.5;
+      ctx.beginPath();
+      ctx.moveTo(off + R * 0.5, 0);
+      ctx.lineTo(off - R * 0.3, -R * 0.55);
+      ctx.lineTo(off - R * 0.05, 0);
+      ctx.lineTo(off - R * 0.3, R * 0.55);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+    ctx.shadowBlur = 0;
+  }
+
   // player caught if within (its radius + half web width + kill-band) of segment a→b
   function segHitsPlayer(ax, ay, bx, by) {
     const vx = bx - ax, vy = by - ay;
@@ -893,7 +1221,82 @@
     return dx * dx + dy * dy < reach * reach;
   }
 
+  // biome wash — translucent colour over the dark, transparent canvas (site bg shows through)
+  function drawBiome() {
+    if (!biome) return;
+    if (biome.tint) { // flat colour wash for a clear, distinct base hue
+      const [r, g, b, a] = biome.tint;
+      ctx.fillStyle = `rgba(${r},${g},${b},${a})`;
+      ctx.fillRect(0, 0, w, h);
+    }
+    for (const [r, g, b, a, fx, fy, fs] of biome.glows) {
+      const cx = w * fx, cy = h * fy, rad = Math.max(w, h) * fs;
+      const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+      grd.addColorStop(0, `rgba(${r},${g},${b},${a})`);
+      grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.fillStyle = grd;
+      ctx.fillRect(0, 0, w, h);
+    }
+    if (biome.vig) { // darken the edges to keep it grounded and dark
+      const v = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.34, w / 2, h / 2, Math.max(w, h) * 0.75);
+      v.addColorStop(0, "rgba(6,5,12,0)");
+      v.addColorStop(1, `rgba(6,5,12,${biome.vig})`);
+      ctx.fillStyle = v;
+      ctx.fillRect(0, 0, w, h);
+    }
+  }
+
+  // transient wave/level title + small persistent progress label (non-classic modes)
+  function drawHud() {
+    if (mode === "classic" || !running) return;
+    ctx.save();
+    ctx.textAlign = "center";
+    const label = mode === "waves"
+      ? "WAVE " + wave + (biome ? "  ·  " + biome.name : "")
+      : (journeyIdx + 1) + "/" + JOURNEY.length + "  ·  " + (JOURNEY[journeyIdx] ? JOURNEY[journeyIdx].name : "");
+    ctx.font = `600 ${13 * uiScale}px "General Sans", system-ui, sans-serif`;
+    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    ctx.fillText(label.toUpperCase(), w / 2, 56 * uiScale);
+    if (banner && elapsed < banner.until) {
+      const k = Math.min(1, (banner.until - elapsed) / 0.5, (elapsed - (banner.until - 2.4)) / 0.4 + 0.0001);
+      const a = Math.max(0, Math.min(1, k));
+      ctx.fillStyle = `rgba(255,255,255,${a})`;
+      ctx.font = `700 ${44 * uiScale}px "Clash Display", system-ui, sans-serif`;
+      ctx.fillText(banner.big, w / 2, h * 0.42);
+      if (banner.sub) {
+        ctx.font = `600 ${18 * uiScale}px "General Sans", system-ui, sans-serif`;
+        ctx.fillStyle = `rgba(200,220,255,${a * 0.85})`;
+        ctx.fillText(banner.sub, w / 2, h * 0.42 + 34 * uiScale);
+      }
+    }
+    ctx.restore();
+  }
+
+  let pauseHue = 0;
+  function drawPauseOverlay() {
+    pauseHue = (pauseHue + 1.6) % 360; // elapsed is frozen while paused → own clock
+    ctx.save();
+    ctx.fillStyle = "rgba(8,7,13,0.6)";
+    ctx.fillRect(0, 0, w, h);
+    ctx.textAlign = "center";
+    const fs = 52 * uiScale;
+    ctx.font = `700 ${fs}px "Clash Display", system-ui, sans-serif`;
+    // rainbow sweep across the word
+    const tw = ctx.measureText("PAUSED").width;
+    const g = ctx.createLinearGradient(w / 2 - tw / 2, 0, w / 2 + tw / 2, 0);
+    for (let i = 0; i <= 6; i++) g.addColorStop(i / 6, `hsl(${(pauseHue + i * 60) % 360},95%,63%)`);
+    ctx.fillStyle = g;
+    ctx.shadowColor = `hsl(${pauseHue},95%,60%)`; ctx.shadowBlur = 26 * uiScale;
+    ctx.fillText("PAUSED", w / 2, h * 0.46);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = `hsla(${pauseHue},70%,80%,0.9)`;
+    ctx.font = `500 ${15 * uiScale}px "General Sans", system-ui, sans-serif`;
+    ctx.fillText("press P / Space or tap to resume", w / 2, h * 0.46 + 36 * uiScale);
+    ctx.restore();
+  }
+
   function drawScene() {
+    drawBiome();
     // expanding shockwave rings — yellow for cluster jolts, rainbow for star blast
     for (let i = shocks.length - 1; i >= 0; i--) {
       const s = shocks[i];
@@ -916,6 +1319,8 @@
             points += BOSS_VAL; ptsEl.textContent = String(points);
             shocks.push({ x: boss.x, y: boss.y, t: 0, max: 160 * dpr });
             boss = null;
+            nextBoss = elapsed + 24 + Math.random() * 14; // classic: don't insta-respawn the boss
+
           }
         }
       }
@@ -971,6 +1376,22 @@
     // shield powerup
     if (shield) { shield.t += 0.03; drawShield(shield.x, shield.y, shield.t); }
 
+    // shooter powerup
+    if (shooter) { shooter.t += 0.04; drawShooter(shooter.x, shooter.y, shooter.t); }
+
+    // darts in flight
+    if (bullets.length) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(150,255,210,0.95)";
+      ctx.lineWidth = 3 * dpr; ctx.lineCap = "round";
+      ctx.shadowColor = "rgba(120,255,190,0.9)"; ctx.shadowBlur = 10 * dpr;
+      for (const bl of bullets) {
+        const s = Math.hypot(bl.vx, bl.vy) || 1, ux = bl.vx / s, uy = bl.vy / s, len = 11 * dpr;
+        ctx.beginPath(); ctx.moveTo(bl.x, bl.y); ctx.lineTo(bl.x - ux * len, bl.y - uy * len); ctx.stroke();
+      }
+      ctx.restore(); ctx.shadowBlur = 0;
+    }
+
     // frozen-time tint + frost vignette
     if (elapsed < frozenUntil) {
       ctx.fillStyle = "rgba(120,200,255,0.10)";
@@ -992,13 +1413,15 @@
     if (mult > 1) {
       const hue = (elapsed * 240) % 360;
       ctx.save();
-      ctx.font = `700 ${30 * dpr}px "Clash Display", system-ui, sans-serif`;
+      ctx.font = `700 ${32 * uiScale}px "Clash Display", system-ui, sans-serif`;
       ctx.textAlign = "center";
       ctx.shadowColor = `hsl(${hue},100%,60%)`; ctx.shadowBlur = 18 * dpr;
       ctx.fillStyle = `hsl(${hue},100%,66%)`;
-      ctx.fillText(`×${mult}`, w / 2, 96 * dpr);
+      ctx.fillText(`×${mult}`, w / 2, 84 * uiScale + 36 * uiScale);
       ctx.restore(); ctx.shadowBlur = 0;
     }
+
+    drawHud(); // wave/level title + progress label (non-classic modes)
 
     // player — bright pulsing node with halo (hidden on menu, fades in on start)
     if (playerAlpha < 0.01) return;
@@ -1019,6 +1442,14 @@
       ctx.strokeStyle = `rgba(150,225,255,${0.6 + 0.3 * Math.sin(elapsed * 6)})`;
       ctx.beginPath(); ctx.arc(player.x, player.y, pr * 2.6, 0, 6.283185); ctx.stroke();
     }
+    // armed (shooter) ring — green, with a little aim tick in the travel direction
+    if (elapsed < shootUntil) {
+      ctx.lineWidth = 2 * dpr;
+      ctx.strokeStyle = `rgba(140,255,200,${0.55 + 0.3 * Math.sin(elapsed * 10)})`;
+      ctx.beginPath(); ctx.arc(player.x, player.y, pr * 2.1, 0, 6.283185); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(player.x + heading.x * pr * 2.1, player.y + heading.y * pr * 2.1);
+      ctx.lineTo(player.x + heading.x * pr * 3.2, player.y + heading.y * pr * 3.2); ctx.stroke();
+    }
     ctx.globalAlpha = 1;
   }
 
@@ -1037,7 +1468,10 @@
   async function loadBoard(myName) {
     if (!LB.url) { boardEl.innerHTML = '<li class="lb__empty">leaderboard not set up</li>'; return; }
     try {
-      const res = await fetch(`${LB.url}/rest/v1/scores?select=name,score&order=score.desc&limit=${LB.limit}`, { headers: lbHeaders(), cache: "no-store" });
+      // prefer the per-mode board; if the `mode` column isn't set up yet, fall back
+      // to the legacy single board so the leaderboard keeps working.
+      let res = await fetch(`${LB.url}/rest/v1/scores?select=name,score&mode=eq.${mode}&order=score.desc&limit=${LB.limit}`, { headers: lbHeaders(), cache: "no-store" });
+      if (!res.ok) res = await fetch(`${LB.url}/rest/v1/scores?select=name,score&order=score.desc&limit=${LB.limit}`, { headers: lbHeaders(), cache: "no-store" });
       if (!res.ok) throw 0;
       const list = await res.json();
       if (!list.length) { boardEl.innerHTML = '<li class="lb__empty">no scores yet — be first</li>'; return; }
@@ -1057,11 +1491,15 @@
     submitScoreBtn.disabled = true;
     lbStatusEl.textContent = "submitting…";
     try {
-      const res = await fetch(`${LB.url}/rest/v1/scores`, {
+      const base = { name, score: +lastRun.score.toFixed(1), time: +lastRun.time.toFixed(1), points: lastRun.points };
+      const post = (body) => fetch(`${LB.url}/rest/v1/scores`, {
         method: "POST",
         headers: { ...lbHeaders(), "Content-Type": "application/json", Prefer: "return=minimal" },
-        body: JSON.stringify({ name, score: +lastRun.score.toFixed(1), time: +lastRun.time.toFixed(1), points: lastRun.points }),
+        body: JSON.stringify(body),
       });
+      // include mode; if the column isn't set up yet, retry without it
+      let res = await post({ ...base, mode });
+      if (!res.ok) res = await post(base);
       if (!res.ok) throw 0;
       lbStatusEl.textContent = "saved!";
       lbSubmitEl.hidden = true;
@@ -1082,9 +1520,47 @@
   }
   function closeHelp() { helpPanel.hidden = true; helpReturn.hidden = false; }
 
+  // pick a mode from the start menu → straight into play, or a plot card for Journey
+  function chooseMode(m) {
+    mode = m;
+    loadBest();
+    if (mode === "journey") { journeyIdx = 0; startPanel.hidden = true; showPlot(); }
+    else start();
+  }
+  // return to the mode-select menu from win/over/plot
+  function backToMenu() {
+    running = false; dead = false; paused = false; setPauseBtn();
+    overPanel.hidden = true; winPanel.hidden = true; plotPanel.hidden = true; helpPanel.hidden = true;
+    document.body.classList.remove("playing", "paused");
+    startPanel.hidden = false;
+    mode = "classic"; biome = null; banner = null; loadBest();
+    reset(); idleFrame();
+  }
+
+  // pause — freezes the run; cursor returns; resume via key/button/tap
+  const pauseBtn = document.getElementById("pause-btn");
+  function setPauseBtn() {
+    if (!pauseBtn) return;
+    pauseBtn.textContent = paused ? "▶" : "❚❚";
+    pauseBtn.setAttribute("aria-label", paused ? "resume" : "pause");
+  }
+  function togglePause() {
+    if (!running) return;
+    paused = !paused;
+    document.body.classList.toggle("paused", paused); // show the cursor while paused (keeps .playing → pause btn stays)
+    setPauseBtn();
+  }
+
+  function toggleMute() { audio.resume(); const m = audio.toggleMute(); muteEl.textContent = m ? "🔇 muted (M)" : "🔊 sound on (M)"; }
+
   // controls
-  document.getElementById("start-btn").addEventListener("click", start);
+  if (pauseBtn) pauseBtn.addEventListener("click", togglePause);
+  muteEl.addEventListener("click", toggleMute);
+  document.querySelectorAll(".mode-btn").forEach((b) => b.addEventListener("click", () => chooseMode(b.dataset.mode)));
   document.getElementById("retry-btn").addEventListener("click", start);
+  document.getElementById("plot-begin").addEventListener("click", start);
+  document.getElementById("win-menu").addEventListener("click", backToMenu);
+  document.getElementById("menu-btn").addEventListener("click", backToMenu);
   document.getElementById("help-btn").addEventListener("click", openHelp);
   document.getElementById("help-btn-over").addEventListener("click", openHelp);
   document.getElementById("help-back").addEventListener("click", closeHelp);
@@ -1093,11 +1569,13 @@
   addEventListener("keydown", (e) => {
     if (document.activeElement === initialsEl) return; // typing initials → ignore game keys
     if (!helpPanel.hidden) { if (e.key === "Escape" || e.key === "h" || e.key === "H" || e.key === "?") closeHelp(); return; }
+    if (!plotPanel.hidden) { if (e.key === "Enter" || e.key === " ") start(); else if (e.key === "Escape") backToMenu(); return; }
+    if (!winPanel.hidden) { if (e.key === "Enter" || e.key === "Escape") backToMenu(); return; }
     if ((e.key === "h" || e.key === "H" || e.key === "?") && !running) { openHelp(); return; }
-    if (e.key === "Escape") { window.location.href = "/"; }
+    if ((e.key === "p" || e.key === "P" || e.key === " ") && running) { e.preventDefault(); togglePause(); return; }
+    if (e.key === "Escape") { if (paused) togglePause(); else if (!overPanel.hidden) backToMenu(); else window.location.href = "/"; }
     if ((e.key === "r" || e.key === "R") && dead) start();
-    if (e.key === "Enter" && !running) start();
-    if (e.key === "m" || e.key === "M") { const m = audio.toggleMute(); muteEl.textContent = m ? "🔇 muted (M)" : "🔊 sound on (M)"; }
+    if (e.key === "m" || e.key === "M") toggleMute();
   });
 
   reset();
