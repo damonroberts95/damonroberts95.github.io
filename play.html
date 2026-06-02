@@ -135,7 +135,21 @@
     }
     .lb__submit input:focus { border-color: var(--accent); }
     .btn--sm { margin: 0; padding: 8px 16px; font-size: 0.88rem; }
+    .btn--ghost { background: transparent; border-color: var(--line); }
     .lb__status { font-size: 0.78rem; color: var(--muted); }
+    /* how-to-play panel */
+    .help { max-width: 420px; margin: 6px auto 0; text-align: left; }
+    .help h2 {
+      font-family: var(--font-display); font-weight: 600; font-size: 0.78rem;
+      letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
+      margin: 20px 0 10px;
+    }
+    .help ul { list-style: none; display: grid; gap: 9px; }
+    .help li { display: flex; gap: 10px; align-items: flex-start; font-size: 0.9rem; color: var(--muted); line-height: 1.4; }
+    .help li b { color: var(--text); font-weight: 600; }
+    .help .dot { width: 0.85em; height: 0.85em; margin-top: 0.28em; border-radius: 999px; flex: none; box-shadow: 0 0 9px currentColor; background: currentColor; }
+    .help .ic { width: 1.2em; flex: none; text-align: center; color: var(--text); }
+    .help .note { font-size: 0.82rem; opacity: 0.8; margin-top: 10px; }
     .home {
       position: fixed; left: 26px; bottom: 20px; z-index: 5; /* above panels */
       color: var(--muted); font-size: 0.82rem; pointer-events: auto;
@@ -169,6 +183,7 @@
       <p class="big">The nodes want your cursor. Don't let them have it.</p>
       <p class="hint">Dodge the nodes. Grab ◆ points (chain for ×combo), ★ blast, ❄ freeze, ⬡ shield. Beware the boss. <kbd>M</kbd> mutes.</p>
       <button class="btn" id="start-btn">Start</button>
+      <button class="btn btn--sm btn--ghost" id="help-btn" style="margin-left:10px">How to play</button>
     </div>
   </div>
 
@@ -192,7 +207,43 @@
       </div>
 
       <button class="btn" id="retry-btn">Run again</button>
+      <button class="btn btn--sm btn--ghost" id="help-btn-over" style="margin-left:10px">How to play</button>
       <p class="hint" style="margin-top:14px">press <kbd>R</kbd> to retry &middot; <kbd>Esc</kbd> for home</p>
+    </div>
+  </div>
+
+  <!-- how to play -->
+  <div class="panel" id="help" hidden>
+    <div class="panel__card">
+      <h1 style="font-size:clamp(2rem,8vw,3.2rem)">HOW TO PLAY</h1>
+      <p class="big">You are the bright node. Move with the mouse or a finger-drag. The hunter-nodes home in on you — touching one, or the glowing <b>web</b> strung between two nearby nodes, gets you caught.</p>
+
+      <div class="help">
+        <h2>Node personalities</h2>
+        <ul>
+          <li><span class="dot" style="color:rgb(199,116,232)"></span><span><b>Purple — Chaser.</b> Straight, aggressive pursuit.</span></li>
+          <li><span class="dot" style="color:rgb(255,106,213)"></span><span><b>Pink — Ambusher.</b> Aims ahead of where you're heading.</span></li>
+          <li><span class="dot" style="color:rgb(34,211,238)"></span><span><b>Cyan — Erratic.</b> Wobbles and orbits around you.</span></li>
+          <li><span class="dot" style="color:rgb(255,138,96)"></span><span><b>Orange — Shy.</b> Chases, but bolts when it gets close.</span></li>
+          <li><span class="dot" style="color:rgb(120,196,255)"></span><span><b>Blue — Scatter.</b> Roams the arena, only loosely after you.</span></li>
+          <li><span class="dot" style="color:rgb(255,248,120)"></span><span><b>Yellow — Cluster.</b> Slow, weak chase, sticks tight to its kind.</span></li>
+        </ul>
+        <p class="note">Same-colour nodes flock into groups, and the webs between nearby nodes are lethal. The longer you survive, the tighter the groups pack and the bigger the nodes grow.</p>
+
+        <h2>Powerups &amp; threats</h2>
+        <ul>
+          <li><span class="ic">◆</span><span><b>Gem</b> — points. Grab several in quick succession for a ×combo multiplier.</span></li>
+          <li><span class="ic">★</span><span><b>Star</b> — a blast wave that destroys every node it reaches.</span></li>
+          <li><span class="ic">❄</span><span><b>Freeze</b> — freezes all nodes for a few seconds (their webs still kill).</span></li>
+          <li><span class="ic">⬡</span><span><b>Shield</b> — absorbs one hit and shoves the swarm away.</span></li>
+          <li><span class="ic">◉</span><span><b>Boss</b> — the big spiked eye. It takes on the personality of its colour. Catch it in a star-blast to pop it into a swarm of its own colour (+50).</span></li>
+        </ul>
+
+        <h2>Keys</h2>
+        <p class="note"><kbd>M</kbd> mute &middot; <kbd>R</kbd> retry &middot; <kbd>Esc</kbd> back to site</p>
+      </div>
+
+      <button class="btn" id="help-back">Back</button>
     </div>
   </div>
 

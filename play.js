@@ -357,7 +357,7 @@
     else if (edge === 2) { x = rand(0, w); y = h + 30 * dpr; }
     else { x = -30 * dpr; y = rand(0, h); }
     const color = PALETTE[(Math.random() * PALETTE.length) | 0];
-    boss = { x, y, vx: 0, vy: 0, r: 22 * dpr, t: 0, color };
+    boss = { x, y, vx: 0, vy: 0, r: 22 * dpr, t: 0, color, p: PERSONA[color], seed: rand(0, 6.283185) };
   }
 
   // burst a cluster of same-colour nodes outward from a point (boss death → its swarm)
@@ -408,6 +408,7 @@
     audio.resume(); audio.startMusic(); audio.sfx("start"); // gesture → unlock audio
     startPanel.hidden = true;
     overPanel.hidden = true;
+    helpPanel.hidden = true;
     document.body.classList.add("playing"); // hide cursor mid-run
     playerAlpha = 0; // fade the player in
     running = true;
@@ -605,14 +606,29 @@
     }
     hunters = hunters.filter((h) => !h.dead);
 
-    // boss — slow relentless chase, bounces on walls, lethal on touch
+    // boss — steers by its colour's personality (a heavy, slower version of the
+    // matching node behaviour), bounces on walls, lethal on touch
     if (boss) {
       boss.t += dt;
       if (!frozen) {
-        const bdx = player.x - boss.x, bdy = player.y - boss.y, bd = Math.hypot(bdx, bdy) || 1;
-        const bms = (60 + elapsed * 2) * dpr;
-        boss.vx += (bdx / bd) * 120 * dpr * dt;
-        boss.vy += (bdy / bd) * 120 * dpr * dt;
+        const p = boss.p;
+        let tx = player.x, ty = player.y;             // default: straight chase
+        if (p.kind === "ambush") {                    // lead the player's motion
+          tx = player.x + player.vx * 0.7; ty = player.y + player.vy * 0.7;
+        } else if (p.kind === "erratic") {            // wobble orbit around the player
+          const a = boss.t * 2.4 + boss.seed;
+          tx = player.x + Math.cos(a) * 200 * dpr; ty = player.y + Math.sin(a * 1.25) * 200 * dpr;
+        } else if (p.kind === "scatter") {            // roam the arena, barely chasing
+          const a = elapsed * 0.22 + boss.seed;
+          tx = w * 0.5 + Math.cos(a) * w * 0.46; ty = h * 0.5 + Math.sin(a * 1.3) * h * 0.46;
+        }
+        let tdx = tx - boss.x, tdy = ty - boss.y;
+        const bd0 = Math.hypot(player.x - boss.x, player.y - boss.y) || 1;
+        if (p.kind === "shy" && bd0 < 300 * dpr) { tdx = boss.x - player.x; tdy = boss.y - player.y; } // bolt when close
+        const td = Math.hypot(tdx, tdy) || 1;
+        const bms = (60 + elapsed * 2) * dpr * p.spd; // persona scales the boss's top speed
+        boss.vx += (tdx / td) * 120 * dpr * p.acc * dt;
+        boss.vy += (tdy / td) * 120 * dpr * p.acc * dt;
         const bsp = Math.hypot(boss.vx, boss.vy);
         if (bsp > bms) { boss.vx = (boss.vx / bsp) * bms; boss.vy = (boss.vy / bsp) * bms; }
         boss.x += boss.vx * dt; boss.y += boss.vy * dt;
@@ -1056,13 +1072,28 @@
     }
   }
 
+  // how-to-play overlay — opens over whichever menu is showing, returns to it
+  const helpPanel = document.getElementById("help");
+  let helpReturn = startPanel;
+  function openHelp() {
+    if (!helpPanel.hidden) return;
+    helpReturn = !overPanel.hidden ? overPanel : startPanel;
+    helpReturn.hidden = true; helpPanel.hidden = false;
+  }
+  function closeHelp() { helpPanel.hidden = true; helpReturn.hidden = false; }
+
   // controls
   document.getElementById("start-btn").addEventListener("click", start);
   document.getElementById("retry-btn").addEventListener("click", start);
+  document.getElementById("help-btn").addEventListener("click", openHelp);
+  document.getElementById("help-btn-over").addEventListener("click", openHelp);
+  document.getElementById("help-back").addEventListener("click", closeHelp);
   submitScoreBtn.addEventListener("click", submitScore);
   initialsEl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.stopPropagation(); submitScore(); } });
   addEventListener("keydown", (e) => {
     if (document.activeElement === initialsEl) return; // typing initials → ignore game keys
+    if (!helpPanel.hidden) { if (e.key === "Escape" || e.key === "h" || e.key === "H" || e.key === "?") closeHelp(); return; }
+    if ((e.key === "h" || e.key === "H" || e.key === "?") && !running) { openHelp(); return; }
     if (e.key === "Escape") { window.location.href = "/"; }
     if ((e.key === "r" || e.key === "R") && dead) start();
     if (e.key === "Enter" && !running) start();
