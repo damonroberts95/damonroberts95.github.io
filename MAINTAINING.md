@@ -260,6 +260,38 @@ const LB = { url: "https://<project>.supabase.co", anonKey: "sb_publishable_…"
 - A **trim trigger** keeps only the top 10 rows after each insert (a
   `SECURITY DEFINER` function, since the anon role itself can't delete).
 
+**Per-mode leaderboards (Classic / Waves / Journey):** the game sends a `mode`
+column with each score and filters the board by it (`?mode=eq.<mode>`). For this
+to work the `scores` table needs a `mode` column, and the trim trigger must keep
+the top 10 **per mode** (not 10 rows total). Run once in the SQL editor:
+
+```sql
+-- 1. add the column (existing rows default to 'classic')
+alter table public.scores add column if not exists mode text not null default 'classic';
+
+-- 2. trim trigger: keep only the top 10 rows for the inserted row's mode
+create or replace function public.trim_scores() returns trigger
+language plpgsql security definer as $$
+begin
+  delete from public.scores s
+  where s.mode = new.mode
+    and s.id not in (
+      select id from public.scores
+      where mode = new.mode
+      order by score desc
+      limit 10
+    );
+  return null;
+end; $$;
+
+drop trigger if exists trim_scores_trg on public.scores;
+create trigger trim_scores_trg after insert on public.scores
+for each row execute function public.trim_scores();
+```
+
+Old scores (from before modes) keep `mode = 'classic'`, so they stay on the
+Classic board. The insert RLS policy still applies; `mode` is a plain text value.
+
 **To moderate / reset scores:** use the Supabase dashboard → Table Editor →
 `scores`. Deleting a row there is the only way to remove a bad entry (the public
 key can't delete by design).
