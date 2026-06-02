@@ -665,7 +665,10 @@
     const dt = Math.min(0.05, (now - lastT) / 1000); // clamp big tab-switch gaps
     lastT = now;
     elapsed = (now - startT) / 1000;
-    timeEl.textContent = elapsed.toFixed(1);
+    // classic counts up (survival); waves/journey count DOWN to the wave/level end
+    timeEl.textContent = mode === "waves" ? Math.max(0, waveEndsAt - elapsed).toFixed(1)
+      : mode === "journey" ? Math.max(0, levelEndsAt - elapsed).toFixed(1)
+      : elapsed.toFixed(1);
     playerAlpha = Math.min(1, playerAlpha + dt * 2.4); // fade-in
     if (playerAlpha > 0.05) { trail.push({ x: player.x, y: player.y }); if (trail.length > 24) trail.shift(); }
 
@@ -686,7 +689,7 @@
     const sp = MOBILE ? 0.78 : 1;                 // ease speed on small screens
     // escalate speed/accel by progress: journey per level, waves per wave number
     // (both reset/segment elapsed, so this keeps the climb going across them)
-    const diff = mode === "journey" ? 1 + journeyIdx * 0.07
+    const diff = mode === "journey" ? 1 + journeyIdx * 0.045
                : mode === "waves" ? 1 + (wave - 1) * 0.04
                : 1;
     const maxSpeed = (90 + elapsed * (MOBILE ? 4 : 5)) * dpr * sp * arenaScale * diff;
@@ -694,8 +697,8 @@
     const cap = Math.round((MOBILE ? 32 : 130) * arenaScale), rate = MOBILE ? 0.6 : 1.15; // more nodes on bigger arenas
     // Journey resets elapsed each level, so it would re-ramp from sparse every time.
     // Start fuller, ramp faster, and escalate the floor with the level number.
-    const jBase = mode === "journey" ? 6 + journeyIdx : 0;
-    const jRate = mode === "journey" ? 1.5 : 1;
+    const jBase = mode === "journey" ? 4 + journeyIdx : 0;
+    const jRate = mode === "journey" ? 1.25 : 1;
     let targetCount = Math.min(cap, 6 + jBase + Math.floor(elapsed * rate * jRate));
     if (bossWave) targetCount = Math.min(targetCount, MOBILE ? 14 : 22); // thin the swarm so the boss is the threat
     else if (waveType === "special") targetCount = Math.min(targetCount, MOBILE ? 18 : 30); // calmer reward wave
