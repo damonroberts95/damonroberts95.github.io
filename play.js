@@ -443,8 +443,8 @@
     const accel = (220 + elapsed * (MOBILE ? 9 : 11)) * dpr * sp; // homing strength (chase the cursor)
     const cap = MOBILE ? 32 : 130, rate = MOBILE ? 0.6 : 1.15; // fewer nodes, slower build on mobile
     const targetCount = Math.min(cap, 6 + Math.floor(elapsed * rate));
-    // nodes swell slightly the longer you survive → bigger targets, harder dodging
-    const grow = 1 + Math.min(0.5, elapsed / 90);
+    // nodes swell the longer you survive → bigger targets, harder dodging (capped at 3x)
+    const grow = 1 + Math.min(2, elapsed / 90);
     // refill toward the target ONE node at a time on a cooldown — so a powerup
     // blast (or boss pop) thins the swarm for a while instead of backfilling
     // instantly next frame. The natural ramp is slower than this, so it's only
