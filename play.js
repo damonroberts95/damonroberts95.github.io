@@ -119,6 +119,12 @@
       // loud, bright, energetic
       neon:  { chords: [{ root: 60, ivs: [0, 4, 7, 11] }, { root: 55, ivs: [0, 4, 7, 10] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 53, ivs: [0, 4, 7, 11] }],
                transpose: 0, bright: 13000, reverb: 1.1, bpmMul: 1.12, leadType: "sawtooth", leadCut: 5200, sparkle: true },
+      // edgy, acidic minor
+      toxic: { chords: [{ root: 55, ivs: [0, 3, 7, 10] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 53, ivs: [0, 3, 7, 10] }, { root: 50, ivs: [0, 3, 7, 10] }],
+               transpose: 0, bright: 8000, reverb: 0.95, bpmMul: 1.05, leadType: "square", leadCut: 2600, sparkle: false },
+      // lush, dreamy, romantic
+      rose:  { chords: [{ root: 53, ivs: [0, 4, 7, 11] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 55, ivs: [0, 4, 7, 10] }, { root: 60, ivs: [0, 4, 7, 11] }],
+               transpose: 0, bright: 9200, reverb: 1.35, bpmMul: 1.0, leadType: "triangle", leadCut: 3000, sparkle: false },
     };
     let prof = PROFILES.default;
 
@@ -395,8 +401,10 @@
       [255,30,200,0.30,0.16,0.16,0.8], [30,235,255,0.30,0.86,0.22,0.8],
       [160,50,255,0.24,0.5,0.94,0.9], [60,255,170,0.18,0.1,0.86,0.7], [255,215,40,0.16,0.92,0.86,0.6],
     ] },
+    toxic: { name: "Toxic", vig: 0.42, tint: [10, 30, 8, 0.32], glows: [[120,255,60,0.28,0.5,-0.06,1.2], [80,200,40,0.22,0.18,1.08,1.0], [210,255,90,0.15,0.86,0.42,0.8]] },
+    rose:  { name: "Rose",  vig: 0.38, tint: [42, 8, 26, 0.32], glows: [[255,40,120,0.30,0.3,-0.05,1.1], [255,100,170,0.22,0.82,1.05,0.9], [200,30,100,0.16,0.5,0.95,0.9]] },
   };
-  const BIOME_KEYS = ["dusk", "ice", "ember", "void", "neon"];
+  const BIOME_KEYS = ["dusk", "ice", "ember", "void", "neon", "toxic", "rose"];
   let lastBiome = null; // avoid immediate repeats when picking randomly
 
   // Journey — a light run through "the Lattice". Each level: dominant colour,
@@ -404,11 +412,11 @@
   const JOURNEY = [
     { name: "Awakening",  color: "199,116,232", len: 35, boss: false, biome: "dusk",
       plot: "You wake as a stray node in the Lattice — a living grid of data. The Chasers turn toward you. Run." },
-    { name: "The Ambush", color: "255,106,213", len: 36, boss: false, biome: "dusk",
+    { name: "The Ambush", color: "255,106,213", len: 36, boss: false, biome: "rose",
       plot: "Word spreads through the mesh. The Ambushers learn your habits, cutting ahead of every move you make." },
     { name: "Static",     color: "34,211,238",  len: 38, boss: false, biome: "ice",
       plot: "Deeper in, the signal frays. Erratics spiral around you, never quite where you expect." },
-    { name: "The Timid",  color: "255,138,96",  len: 38, boss: false, biome: "ember",
+    { name: "The Timid",  color: "255,138,96",  len: 38, boss: false, biome: "toxic",
       plot: "The Shy ones swarm and flinch — bold from afar, panicked up close. Use their fear." },
     { name: "Drift",      color: "120,196,255", len: 40, boss: false, biome: "void",
       plot: "Out in the open field the Scatterers roam, barely chasing. Calm — but the webs between them still bite." },
