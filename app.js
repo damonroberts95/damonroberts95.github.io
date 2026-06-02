@@ -41,6 +41,18 @@ document.getElementById("year").textContent = new Date().getFullYear();
 (function () {
   const egg = document.getElementById("egg");
   if (!egg) return;
+  // randomise the shimmer band colours (within the page's vaporwave palette) each cycle
+  // tuned to the page's vaporwave-sunset background (see body bg in styles.css)
+  const EGG_PALETTE = ["#fff069", "#ff8c46", "#ff56c8", "#b45af6", "#78c4ff", "#22d3ee"];
+  const randColors = () => {
+    const i = Math.floor(Math.random() * EGG_PALETTE.length);
+    let j = Math.floor(Math.random() * EGG_PALETTE.length);
+    if (j === i) j = (j + 1) % EGG_PALETTE.length;
+    egg.style.setProperty("--egg-c1", EGG_PALETTE[i]);
+    egg.style.setProperty("--egg-c2", EGG_PALETTE[j]);
+  };
+  randColors();
+  egg.addEventListener("animationiteration", randColors);
   const go = () => { window.location.href = "play.html"; };
   let dragging = false, sx = 0, sy = 0, moved = 0;
 
