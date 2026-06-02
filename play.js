@@ -224,7 +224,8 @@
   // touch devices: smaller arena is harder, so ease difficulty, float the
   // player above the fingertip, and shorten the webs
   const MOBILE = window.matchMedia("(pointer: coarse)").matches;
-  const LINK_SCALE = MOBILE ? 0.78 : 1;
+  const LINK_SCALE = MOBILE ? 0.6 : 1;   // shorter webs on small screens → fewer lethal lines, more gaps
+  const GROUP_SCALE = MOBILE ? 0.7 : 1;  // tighter clumps on small screens → nodes ball up, opening dodge lanes
 
   let w, h, dpr = 1, linkD2;
   function resize() {
@@ -270,7 +271,10 @@
   addEventListener("touchmove", movePointer, { passive: true });
 
   let hunters = [];
+  let hunterId = 0;           // stable per-node id, for tracking link ages
   let links = []; // {a,b,al,same} built in physics, drawn in drawScene (one pass, not two)
+  let linkAges = new Map();   // "idA|idB" -> seconds that web has existed
+  const WEB_GRACE = 0.32;     // s: a freshly-formed web can't kill until it settles
   let running = false, dead = false;
   let elapsed = 0, lastT = 0, startT = 0;
   let shocks = [];            // {x, y, t, max} expanding ring visuals
@@ -284,6 +288,8 @@
   let nextGem = 0;            // seconds until next gem spawns
   let points = 0;             // collected points (gems)
   const GEM_R = 9, GEM_VAL = 10, KILL_VAL = 5; // points: gem / hunter destroyed
+  let nextSpawn = 0;          // seconds: respawn cooldown gate (throttles refill after kills)
+  const SPAWN_GAP = 0.65;     // seconds between respawns while below target count
   let trail = [];             // player comet trail {x,y}
   let mult = 1, comboUntil = 0; // gem combo multiplier
   const COMBO_WINDOW = 2.4, MULT_MAX = 8;
@@ -303,6 +309,7 @@
     else { x = -20 * dpr; y = rand(0, h); }
     const color = PALETTE[(Math.random() * PALETTE.length) | 0];
     hunters.push({
+      id: hunterId++,
       x, y, vx: 0, vy: 0,
       r: rand(2.6, 4.4) * dpr,
       color,
@@ -316,6 +323,8 @@
 
   function reset() {
     hunters = [];
+    linkAges = new Map();
+    nextSpawn = 0;
     elapsed = 0;
     shocks = [];
     star = null;
@@ -430,9 +439,16 @@
     const sp = MOBILE ? 0.78 : 1;                 // ease speed on small screens
     const maxSpeed = (90 + elapsed * 4) * dpr * sp;
     const accel = (220 + elapsed * 9) * dpr * sp; // homing strength (chase the cursor)
-    const cap = MOBILE ? 45 : 100, rate = MOBILE ? 0.6 : 1; // fewer nodes, slower build on mobile
+    const cap = MOBILE ? 32 : 100, rate = MOBILE ? 0.6 : 1; // fewer nodes, slower build on mobile
     const targetCount = Math.min(cap, 6 + Math.floor(elapsed * rate));
-    while (hunters.length < targetCount) spawnHunter();
+    // refill toward the target ONE node at a time on a cooldown — so a powerup
+    // blast (or boss pop) thins the swarm for a while instead of backfilling
+    // instantly next frame. The natural ramp is slower than this, so it's only
+    // throttled right after a big kill.
+    if (hunters.length < targetCount && elapsed >= nextSpawn) {
+      spawnHunter();
+      nextSpawn = elapsed + SPAWN_GAP;
+    }
 
     // spawn a rainbow star now and then; collect it by touching it
     if (!star && elapsed >= nextStar) {
@@ -594,6 +610,10 @@
   //  - if a drawn link (pair within LINK_DIST) touches the player → lethal
   function physics(dt, frozen) {
     links.length = 0;
+    // track how long each web has existed → a freshly-formed web can't kill
+    // until WEB_GRACE has passed (gives the player a beat to read the threat).
+    const prevAges = linkAges;
+    const nextAges = new Map();
     // frozen: hunters don't move, only their webs can still catch you
     if (frozen) {
       let kill = false;
@@ -603,17 +623,21 @@
           const b = hunters[j];
           const dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
           if (d2 < linkD2) {
+            const key = a.id < b.id ? a.id + "|" + b.id : b.id + "|" + a.id;
+            const lifeT = (prevAges.get(key) || 0) + dt;
+            nextAges.set(key, lifeT);
             links.push({ a, b, al: 1 - d2 / linkD2, same: a.color === b.color });
-            if (!kill && segHitsPlayer(a.x, a.y, b.x, b.y)) kill = true;
+            if (!kill && lifeT >= WEB_GRACE && segHitsPlayer(a.x, a.y, b.x, b.y)) kill = true;
           }
         }
       }
+      linkAges = nextAges;
       return kill;
     }
-    const SEP = 74 * dpr, SEP2 = SEP * SEP;
+    const SEP = 74 * dpr * GROUP_SCALE, SEP2 = SEP * SEP; // tighter packing on mobile
     const JR = JOLT_R * dpr, JR2 = JR * JR;
     const CR = COH_R * dpr, CR2 = CR * CR;
-    const GR = GROUP_R * dpr, GR2 = GR * GR;
+    const GR = GROUP_R * dpr * GROUP_SCALE, GR2 = GR * GR; // smaller "same clump" radius on mobile
     const n = hunters.length;
     const cnt = new Array(n).fill(0), sx = new Array(n).fill(0), sy = new Array(n).fill(0);
     const scnt = new Array(n).fill(0); // same-colour clump-mates
@@ -656,8 +680,11 @@
           b.vx += ux * rf; b.vy += uy * rf;
         }
         if (d2 < linkD2) {
+          const key = a.id < b.id ? a.id + "|" + b.id : b.id + "|" + a.id;
+          const lifeT = (prevAges.get(key) || 0) + dt;
+          nextAges.set(key, lifeT);
           links.push({ a, b, al: 1 - d2 / linkD2, same });
-          if (!linkKill && segHitsPlayer(a.x, a.y, b.x, b.y)) linkKill = true;
+          if (!linkKill && lifeT >= WEB_GRACE && segHitsPlayer(a.x, a.y, b.x, b.y)) linkKill = true;
         }
       }
     }
@@ -677,6 +704,7 @@
         if (Math.random() < 0.16) { shocks.push({ x: cx, y: cy, t: 0, max: 120 * dpr }); audio.sfx("pop"); }
       }
     }
+    linkAges = nextAges;
     return linkKill;
   }
 

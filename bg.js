@@ -15,8 +15,27 @@
    ============================================================ */
 
 (function () {
+  /* Time-of-day brightness: bright around midday, dark at night.
+     daylight 0..1 drives --day (warm glow), --night (dimmer), --glow (nodes),
+     --grain (texture). Run this FIRST, before the canvas guard, so pages that
+     have no #bg canvas (e.g. the game) still get the live day/night wash. */
+  function applyDaylight(daylight) {
+    const root = document.documentElement.style;
+    root.setProperty("--day", daylight.toFixed(3));
+    root.setProperty("--night", (0.8 * (1 - daylight)).toFixed(3));
+    root.setProperty("--glow", (0.45 + 0.45 * daylight).toFixed(3));
+    root.setProperty("--grain", (0.04 + 0.07 * (1 - daylight)).toFixed(3)); // more texture at night
+  }
+  function clockDaylight() {
+    const now = new Date();
+    const hour = now.getHours() + now.getMinutes() / 60;
+    return Math.max(0, Math.sin(((hour - 6) / 12) * Math.PI)); // 0 at 6/18h, 1 at noon
+  }
+  applyDaylight(clockDaylight());
+  setInterval(() => applyDaylight(clockDaylight()), 5 * 60 * 1000);
+
   const canvas = document.getElementById("bg");
-  if (!canvas) return;
+  if (!canvas) return; // no node-network on this page (e.g. the game) — daylight still applied above
   const ctx = canvas.getContext("2d");
 
   // ---- CONFIG — tweak these ----
@@ -43,23 +62,6 @@
   };
 
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  /* Time-of-day brightness: bright around midday, dark at night.
-     daylight 0..1 drives --day (warm glow), --night (dimmer), --glow (nodes). */
-  function applyDaylight(daylight) {
-    const root = document.documentElement.style;
-    root.setProperty("--day", daylight.toFixed(3));
-    root.setProperty("--night", (0.8 * (1 - daylight)).toFixed(3));
-    root.setProperty("--glow", (0.45 + 0.45 * daylight).toFixed(3));
-    root.setProperty("--grain", (0.04 + 0.07 * (1 - daylight)).toFixed(3)); // more texture at night
-  }
-  function clockDaylight() {
-    const now = new Date();
-    const hour = now.getHours() + now.getMinutes() / 60;
-    return Math.max(0, Math.sin(((hour - 6) / 12) * Math.PI)); // 0 at 6/18h, 1 at noon
-  }
-  applyDaylight(clockDaylight());
-  setInterval(() => applyDaylight(clockDaylight()), 5 * 60 * 1000);
 
   let w, h, dpr = 1, maxD2, minSep2;
   let nodes = [], pulses = [], links = [];
