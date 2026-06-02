@@ -113,9 +113,9 @@
       // tense, smouldering
       ember: { chords: [{ root: 53, ivs: [0, 4, 7, 10] }, { root: 56, ivs: [0, 3, 7, 10] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 55, ivs: [0, 4, 7, 10] }],
                transpose: 0, bright: 7200, reverb: 0.9, bpmMul: 1.06, leadType: "sawtooth", leadCut: 2400, sparkle: false },
-      // crystalline, bright, airy
+      // crystalline + jittery — brighter, faster, a glassy saw lead (Erratics)
       ice:   { chords: [{ root: 60, ivs: [0, 4, 7, 11] }, { root: 62, ivs: [0, 4, 7, 11] }, { root: 59, ivs: [0, 3, 7, 10] }, { root: 57, ivs: [0, 4, 7, 11] }],
-               transpose: 0, bright: 12000, reverb: 1.5, bpmMul: 0.98, leadType: "sine", leadCut: 6000, sparkle: true },
+               transpose: 0, bright: 13000, reverb: 1.3, bpmMul: 1.12, leadType: "sawtooth", leadCut: 6800, sparkle: true },
       // loud, bright, energetic
       neon:  { chords: [{ root: 60, ivs: [0, 4, 7, 11] }, { root: 55, ivs: [0, 4, 7, 10] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 53, ivs: [0, 4, 7, 11] }],
                transpose: 0, bright: 13000, reverb: 1.1, bpmMul: 1.12, leadType: "sawtooth", leadCut: 5200, sparkle: true },
@@ -392,6 +392,7 @@
   let themeColor = null;            // dominant spawn colour this wave/level (null = all)
   let bossWave = false;             // current wave/level features the boss
   let journeyIdx = 0, levelEndsAt = 0; // journey mode
+  let frozenAccum = 0, waveRampStart = 0; // seconds spent frozen (excluded from the speed ramp)
   let banner = null;                // {big, sub, until} transient on-canvas wave/level title
   let biome = null;                 // current biome (visual theme)
   const WAVE_LEN = 18;              // seconds per wave (survive to advance)
@@ -498,6 +499,7 @@
     shootUntil = 0; nextBullet = 0; bullets = [];
     heading.x = 1; heading.y = 0;
     bosses = []; enemyBullets = []; nextBoss = 24 + Math.random() * 14;
+    frozenAccum = 0; waveRampStart = 0;
     audio.setShield(false);
     player.x = w / 2; player.y = h / 2;
     dead = false;
@@ -556,6 +558,7 @@
     audio.setBiome(bkey);
     waveEndsAt = now + WAVE_LEN;
     bosses = []; enemyBullets = []; // clear any boss that outlived the previous wave
+    waveRampStart = elapsed - frozenAccum; // wave speed ramps from here (active time)
     let sub;
     if (bossWave) {
       waveType = "boss";
@@ -710,6 +713,7 @@
     const dt = Math.min(0.05, (now - lastT) / 1000); // clamp big tab-switch gaps
     lastT = now;
     elapsed = (now - startT) / 1000;
+    if (elapsed < frozenUntil) frozenAccum += dt; // don't let frozen time fuel the speed ramp
     // classic counts up (survival); waves/journey count DOWN to the wave/level end;
     // journey boss levels show bosses-remaining instead (they end on defeat, not time)
     timeEl.textContent = mode === "waves" ? Math.max(0, waveEndsAt - elapsed).toFixed(1)
@@ -736,33 +740,35 @@
     }
 
     // difficulty ramps with time: more hunters fast, slightly slower speed.
-    // desktop ramps a touch harder (steeper speed/accel, more nodes); mobile eased.
+    // rampTime excludes time spent frozen, so a late freeze doesn't make the game
+    // jump to a much higher speed the instant it thaws.
+    const rt = elapsed - frozenAccum;
     const sp = MOBILE ? 0.78 : 1;                 // ease speed on small screens
     let maxSpeed, accel;
     if (mode === "waves") {
       // Waves: ramp off time-INTO-the-current-wave (resets each wave → speed steps
       // down at every wave start), with a gentle per-wave base so it rises overall.
-      const into = Math.max(0, elapsed - (waveEndsAt - WAVE_LEN)); // 0..WAVE_LEN
+      const into = Math.max(0, rt - waveRampStart); // active secs into the current wave
       const baseS = 90 + Math.min(120, (wave - 1) * 8);
       const baseA = 200 + Math.min(180, (wave - 1) * 12);
       maxSpeed = (baseS + into * (MOBILE ? 1.2 : 1.5)) * dpr * sp * arenaScale;
       accel = (baseA + into * (MOBILE ? 2.4 : 3)) * dpr * sp * arenaScale;
     } else {
-      // Classic/Journey: ramp with elapsed; journey escalates a touch per level.
+      // Classic/Journey: ramp with active time; journey escalates a touch per level.
       const diff = mode === "journey" ? 1 + journeyIdx * 0.045 : 1;
-      maxSpeed = (90 + elapsed * (MOBILE ? 4 : 5)) * dpr * sp * arenaScale * diff;
-      accel = (220 + elapsed * (MOBILE ? 9 : 11)) * dpr * sp * arenaScale * diff;
+      maxSpeed = (90 + rt * (MOBILE ? 4 : 5)) * dpr * sp * arenaScale * diff;
+      accel = (220 + rt * (MOBILE ? 9 : 11)) * dpr * sp * arenaScale * diff;
     }
     const cap = Math.round((MOBILE ? 32 : 130) * arenaScale), rate = MOBILE ? 0.6 : 1.15; // more nodes on bigger arenas
     // Journey resets elapsed each level, so it would re-ramp from sparse every time.
     // Start fuller, ramp faster, and escalate the floor with the level number.
     const jBase = mode === "journey" ? 4 + journeyIdx : 0;
     const jRate = mode === "journey" ? 1.25 : 1;
-    let targetCount = Math.min(cap, 6 + jBase + Math.floor(elapsed * rate * jRate));
+    let targetCount = Math.min(cap, 6 + jBase + Math.floor(rt * rate * jRate));
     if (bossWave) targetCount = Math.min(targetCount, MOBILE ? 14 : 22); // thin the swarm so the boss is the threat
     else if (waveType === "special") targetCount = Math.min(targetCount, MOBILE ? 18 : 30); // calmer reward wave
     // nodes swell the longer you survive → bigger targets, harder dodging (capped at 3x)
-    const grow = 1 + Math.min(2, elapsed / 90);
+    const grow = 1 + Math.min(2, rt / 90);
     // refill toward the target ONE node at a time on a cooldown — so a powerup
     // blast (or boss pop) thins the swarm for a while instead of backfilling
     // instantly next frame. The natural ramp is slower than this, so it's only
