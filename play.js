@@ -89,7 +89,7 @@
      Supersaw voices + reverb + filter envelopes; tempo rises with
      elapsed so the music tracks the game's pace. ---- */
   function makeAudio() {
-    let ctx = null, master, mlp, music, fx, verb, noise, muted = false, playing = false, step = 0, nextNote = 0, timer = null, bright = false;
+    let ctx = null, master, mlp, music, fx, verb, vg, noise, muted = false, playing = false, step = 0, nextNote = 0, timer = null, bright = false;
     const CHORDS = [
       { root: 57, ivs: [0, 3, 7, 10] }, // Am7
       { root: 53, ivs: [0, 4, 7, 11] }, // Fmaj7
@@ -98,9 +98,33 @@
     ];
     const ARP = [0, 2, 3, 2, 1, 2, 3, 1, 0, 3, 2, 3, 1, 2, 0, 2];
     const mtof = (m) => 440 * 2 ** ((m - 69) / 12);
+
+    /* Per-biome music profiles — same vaporwave engine, tweaked for identity:
+       chords (mood), transpose (register), bright (master cutoff), reverb (space),
+       bpmMul (pace), leadType/leadCut (lead timbre), sparkle (shimmer layer). */
+    const PROFILES = {
+      default: { chords: CHORDS, transpose: 0, bright: 8500, reverb: 1.0, bpmMul: 1, leadType: "triangle", leadCut: 2100, sparkle: false },
+      // warm, mellow sunset
+      dusk:  { chords: [{ root: 53, ivs: [0, 4, 7, 11] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 50, ivs: [0, 3, 7, 10] }, { root: 55, ivs: [0, 4, 7, 10] }],
+               transpose: 0, bright: 6800, reverb: 1.2, bpmMul: 0.94, leadType: "triangle", leadCut: 1700, sparkle: false },
+      // deep, dark, spacious
+      void:  { chords: [{ root: 45, ivs: [0, 3, 7, 10] }, { root: 48, ivs: [0, 3, 7, 10] }, { root: 50, ivs: [0, 3, 7, 10] }, { root: 43, ivs: [0, 3, 7, 10] }],
+               transpose: -12, bright: 4600, reverb: 1.7, bpmMul: 0.88, leadType: "sine", leadCut: 1300, sparkle: false },
+      // tense, smouldering
+      ember: { chords: [{ root: 53, ivs: [0, 4, 7, 10] }, { root: 56, ivs: [0, 3, 7, 10] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 55, ivs: [0, 4, 7, 10] }],
+               transpose: 0, bright: 7200, reverb: 0.9, bpmMul: 1.06, leadType: "sawtooth", leadCut: 2400, sparkle: false },
+      // crystalline, bright, airy
+      ice:   { chords: [{ root: 60, ivs: [0, 4, 7, 11] }, { root: 62, ivs: [0, 4, 7, 11] }, { root: 59, ivs: [0, 3, 7, 10] }, { root: 57, ivs: [0, 4, 7, 11] }],
+               transpose: 0, bright: 12000, reverb: 1.5, bpmMul: 0.98, leadType: "sine", leadCut: 6000, sparkle: true },
+      // loud, bright, energetic
+      neon:  { chords: [{ root: 60, ivs: [0, 4, 7, 11] }, { root: 55, ivs: [0, 4, 7, 10] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 53, ivs: [0, 4, 7, 11] }],
+               transpose: 0, bright: 13000, reverb: 1.1, bpmMul: 1.12, leadType: "sawtooth", leadCut: 5200, sparkle: true },
+    };
+    let prof = PROFILES.default;
+
     const frozenNow = () => elapsed < frozenUntil;
     // crawls during freeze, very slow on menu/loss, eases up while playing
-    const curBPM = () => (frozenNow() ? 28 : running ? Math.min(132, 84 + elapsed * 0.6) : 40);
+    const curBPM = () => (frozenNow() ? 28 : running ? Math.min(132, 84 + elapsed * 0.6) * prof.bpmMul : 40);
 
     function impulse(dur, decay) {
       const len = Math.floor(ctx.sampleRate * dur);
@@ -114,7 +138,7 @@
       master = ctx.createGain(); master.gain.value = 0.8; master.connect(ctx.destination);
       mlp = ctx.createBiquadFilter(); mlp.type = "lowpass"; mlp.frequency.value = 8500; mlp.connect(master); // warm, less harsh
       verb = ctx.createConvolver(); verb.buffer = impulse(3.2, 2.4);
-      const vg = ctx.createGain(); vg.gain.value = 1.0; verb.connect(vg); vg.connect(mlp);
+      vg = ctx.createGain(); vg.gain.value = 1.0; verb.connect(vg); vg.connect(mlp);
       music = ctx.createGain(); music.gain.value = 0.17; music.connect(mlp); music.connect(verb);
       fx = ctx.createGain(); fx.gain.value = 0.5; fx.connect(mlp); fx.connect(verb);
       const len = Math.floor(ctx.sampleRate * 0.5);
@@ -167,7 +191,8 @@
     }
 
     function scheduleStep(s, t) {
-      const c = CHORDS[Math.floor(s / 16) % CHORDS.length], b = s % 16;
+      const set = prof.chords, tr = prof.transpose;
+      const c = set[Math.floor(s / 16) % set.length], b = s % 16;
       const pitch = frozenNow() ? 0.5 : 1; // drop an octave while frozen (deep + woozy)
       // kick on every beat — gentle four-on-the-floor pulse
       if (b % 4 === 0) {
@@ -178,19 +203,19 @@
         k.onended = () => { try { k.disconnect(); g.disconnect(); } catch {} };
       }
       // warm bass on the half-bar
-      if (b === 0 || b === 8) synth(mtof(c.root - 12) * pitch, t, 1.1, { gain: 0.26, detune: 6, voices: 2, cut: 440, q: 4, attack: 0.04, sub: true });
+      if (b === 0 || b === 8) synth(mtof(c.root - 12 + tr) * pitch, t, 1.1, { gain: 0.26, detune: 6, voices: 2, cut: 440, q: 4, attack: 0.04, sub: true });
       // lush pad swell
-      if (b === 0) c.ivs.forEach((iv) => synth(mtof(c.root + iv) * pitch, t, 2.5, { gain: 0.05, detune: 18, voices: 3, cut: 1300, q: 1.2, attack: 0.8 }));
-      // bouncier lead — more notes, plucky
+      if (b === 0) c.ivs.forEach((iv) => synth(mtof(c.root + iv + tr) * pitch, t, 2.5, { gain: 0.05, detune: 18, voices: 3, cut: 1300, q: 1.2, attack: 0.8 }));
+      // bouncier lead — more notes, plucky (timbre/brightness set by biome)
       if (b === 0 || b === 3 || b === 6 || b === 8 || b === 11 || b === 14) {
-        const note = c.root + c.ivs[ARP[b] % c.ivs.length] + 12;
-        synth(mtof(note) * pitch, t, 0.55, { type: "triangle", gain: 0.07, detune: 8, voices: 2, cut: 2100, q: 3, attack: 0.02 });
+        const note = c.root + c.ivs[ARP[b] % c.ivs.length] + 12 + tr;
+        synth(mtof(note) * pitch, t, 0.55, { type: prof.leadType, gain: 0.07, detune: 8, voices: 2, cut: prof.leadCut, q: 3, attack: 0.02 });
       }
       // offbeat hats keep it moving
       if (b % 2 === 1) noiseHit(t, 0.025, 0.014, music, 10000);
-      // shield active → bright sparkle layer an octave up (audible "powered" change)
-      if (bright && b % 2 === 0) {
-        const note = c.root + c.ivs[ARP[b] % c.ivs.length] + 24;
+      // shield active OR a sparkly biome → bright shimmer layer an octave up
+      if ((bright || prof.sparkle) && b % 2 === 0) {
+        const note = c.root + c.ivs[ARP[b] % c.ivs.length] + 24 + tr;
         synth(mtof(note) * pitch, t, 0.3, { type: "sine", gain: 0.05, detune: 4, voices: 2, cut: 9000, q: 1, attack: 0.01 });
       }
     }
@@ -201,9 +226,17 @@
       while (nextNote < ahead) { scheduleStep(step, nextNote); nextNote += 60 / curBPM() / 4; step++; }
     }
 
+    // ramp the master brightness + reverb to the current biome profile
+    function applyProf() {
+      if (!ctx) return;
+      mlp.frequency.setTargetAtTime(bright ? Math.max(prof.bright, 14000) : prof.bright, ctx.currentTime, 0.4);
+      if (vg) vg.gain.setTargetAtTime(prof.reverb, ctx.currentTime, 0.4);
+    }
+
     return {
       resume() { ensure(); if (ctx.state === "suspended") ctx.resume(); },
-      startMusic() { ensure(); if (playing) return; playing = true; step = 0; nextNote = ctx.currentTime + 0.1; timer = setInterval(tick, 25); },
+      startMusic() { ensure(); applyProf(); if (playing) return; playing = true; step = 0; nextNote = ctx.currentTime + 0.1; timer = setInterval(tick, 25); },
+      setBiome(key) { prof = PROFILES[key] || PROFILES.default; applyProf(); },
       sfx(name) {
         if (!ctx) return; const t = ctx.currentTime;
         if (name === "gem") {                 // rising shimmer arpeggio
@@ -226,7 +259,7 @@
         }
       },
       toggleMute() { if (!master) return false; muted = !muted; master.gain.setTargetAtTime(muted ? 0 : 0.8, ctx.currentTime, 0.02); return muted; },
-      setShield(on) { bright = on; if (mlp) mlp.frequency.setTargetAtTime(on ? 16000 : 8500, ctx.currentTime, 0.12); },
+      setShield(on) { bright = on; if (mlp) mlp.frequency.setTargetAtTime(on ? 16000 : prof.bright, ctx.currentTime, 0.12); },
     };
   }
 
@@ -443,6 +476,7 @@
     wave = 0; themeColor = null; bossWave = false; banner = null; biome = null;
     if (mode === "waves") nextWave(0);
     else if (mode === "journey") setupJourneyLevel();
+    else audio.setBiome(null); // classic → default music theme
     for (let i = 0; i < 3; i++) spawnHunter();
   }
 
@@ -485,7 +519,9 @@
   function nextWave(now) {
     wave++;
     bossWave = wave % 5 === 0;
-    biome = BIOMES[WAVE_BIOMES[(wave - 1) % WAVE_BIOMES.length]];
+    const bkey = WAVE_BIOMES[(wave - 1) % WAVE_BIOMES.length];
+    biome = BIOMES[bkey];
+    audio.setBiome(bkey);
     waveEndsAt = now + WAVE_LEN;
     boss = null; // clear any boss that outlived the previous wave
     let sub;
@@ -524,6 +560,7 @@
     themeColor = L.color;
     bossWave = !!L.boss;
     biome = BIOMES[L.biome] || null;
+    audio.setBiome(L.biome);
     levelEndsAt = L.len;
     banner = { big: L.name, sub: themeColor ? PERSONA_NAME[themeColor] : "All colours", until: 2.4 };
     if (L.boss) { boss = null; spawnBoss(themeColor || undefined); }
@@ -1427,6 +1464,8 @@
   document.getElementById("retry-btn").addEventListener("click", start);
   document.getElementById("plot-begin").addEventListener("click", start);
   document.getElementById("win-menu").addEventListener("click", backToMenu);
+  document.getElementById("menu-btn").addEventListener("click", backToMenu);
+  document.getElementById("menu-ingame").addEventListener("click", backToMenu);
   document.getElementById("help-btn").addEventListener("click", openHelp);
   document.getElementById("help-btn-over").addEventListener("click", openHelp);
   document.getElementById("help-back").addEventListener("click", closeHelp);

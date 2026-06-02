@@ -166,6 +166,15 @@
       color: var(--muted); font-size: 0.82rem; pointer-events: auto;
     }
     .home:hover { color: var(--text); }
+    /* in-run "back to menu" — only while playing */
+    .menu-link {
+      position: fixed; left: 26px; top: 18px; z-index: 5;
+      display: none; pointer-events: auto; cursor: pointer;
+      font-family: var(--font-body); font-size: 0.82rem; color: var(--muted);
+      background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px;
+    }
+    .menu-link:hover { color: var(--text); border-color: var(--accent); }
+    body.playing .menu-link { display: block; }
     .mute {
       position: fixed; right: 26px; bottom: 20px; z-index: 2;
       color: var(--muted); font-size: 0.8rem; pointer-events: none;
@@ -185,6 +194,7 @@
   </div>
 
   <a class="home" href="/">&larr; back to site</a>
+  <button class="menu-link" id="menu-ingame" aria-label="back to menu">&larr; menu</button>
   <div class="mute" id="mute" aria-hidden="true">🔊 sound on (M)</div>
 
   <!-- start -->
@@ -221,6 +231,7 @@
       </div>
 
       <button class="btn" id="retry-btn">Run again</button>
+      <button class="btn btn--sm btn--ghost" id="menu-btn" style="margin-left:10px">Menu</button>
       <button class="btn btn--sm btn--ghost" id="help-btn-over" style="margin-left:10px">How to play</button>
       <p class="hint" style="margin-top:14px">press <kbd>R</kbd> to retry &middot; <kbd>Esc</kbd> for menu</p>
     </div>
