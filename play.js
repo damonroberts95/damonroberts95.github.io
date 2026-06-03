@@ -548,7 +548,7 @@
       const wspd = ws.spd * dpr * arenaScale, half = Math.min(1.1, 0.55 + (lvl - 1) * 0.045);
       const segs = 7 + Math.floor(lvl * 0.9);
       const wr = (5 + ws.r * 0.6) * (power ? 1.3 : 1) * dpr;
-      const wPierce = 1 + Math.floor(lvl / 4) + (power ? 2 : 0); // absorbed after 1–2 hits (more late / w/ Power)
+      const wPierce = power ? 1 : 0; // absorbed on first hit (Power lets it punch one extra)
       for (let k = 0; k < segs; k++) {
         const a = base + (segs === 1 ? 0 : (k / (segs - 1) - 0.5) * 2 * half);
         bullets.push({ x: player.x, y: player.y, vx: Math.cos(a) * wspd, vy: Math.sin(a) * wspd, life: bounce ? 2.3 : 1.25, r: wr, pierce: wPierce, dmg, bounce, knock, spd: wspd, col: wcol, kind: "wave", rainbow: maxed, hitB: null });
