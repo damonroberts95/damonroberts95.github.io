@@ -488,6 +488,7 @@
   let nextArenaBoss = 0, arenaBossIdx = 0; // boss spawn cadence + which archetype is next
   let bossSpawnAt = 0, flashFrom = 0, flashUntil = 0, flashCol = "255,40,60", lowHpFrom = 1e9; // warning/flash timing
   let playerHp = 1, playerMaxHp = 1;  // arena: multiple hits before death (other modes stay one-hit)
+  let surge = 0;                      // arena adaptive heat: rises while you keep the screen clear, ramps spawns/HP
   let regenShield = true, regenReadyAt = 0; // arena: passive shield that soaks a hit, recharges over 2s
   const PICKUP_TTL = 9;               // seconds an uncollected weapon/buff pickup lingers before fading
   const WEAPON_MAXLVL = 10;
@@ -672,7 +673,7 @@
   const showPts = () => { ptsEl.textContent = String(points + (mode === "journey" ? journeyPts : 0)); };
 
   // arena nodes have HP that scales with time + weapon level (1 elsewhere → one-shot)
-  const nodeHp = () => (mode === "arena" ? 1 + Math.floor(elapsed / 20) + Math.floor((weaponLvl - 1) / 3) : 1);
+  const nodeHp = () => (mode === "arena" ? 1 + Math.floor(elapsed / 20) + Math.floor((weaponLvl - 1) / 3) + Math.floor(surge * 1.5) : 1);
 
   // arena: drop a tight same-colour blob just off an edge → drifts in as a tanky clump
   function spawnCluster() {
@@ -760,7 +761,7 @@
     buffs.frenzy = buffs.power = buffs.bounce = buffs.overdrive = buffs.blade = buffs.dual = buffs.shield = 0; bladeAng = 0; bladeVel = 0; nextDual = 0;
     arenaBossIdx = 0; nextArenaBoss = 12 + Math.random() * 4; bossSpawnAt = 0; flashUntil = 0; lowHpFrom = 1e9;
     playerMaxHp = mode === "arena" ? 5 : 1; playerHp = playerMaxHp;
-    regenShield = true; regenReadyAt = 0;
+    regenShield = true; regenReadyAt = 0; surge = 0;
     player.vx = 0; player.vy = 0;
     player.x = w / 2; player.y = h / 2; player.px = player.x; player.py = player.y;
     aimX = w / 2; aimY = h * 0.3;
@@ -1110,7 +1111,7 @@
       accel = (baseA + into * (MOBILE ? 2.4 : 3)) * dpr * sp * arenaScale;
     } else if (mode === "arena") {
       // Arena: gentle base ramp, but a stronger weapon ramps the threat with it
-      const wdiff = 1 + (weaponLvl - 1) * 0.05; // weapon level → tougher swarm
+      const wdiff = (1 + (weaponLvl - 1) * 0.05) * (1 + surge * 0.2); // weapon level + surge → tougher swarm
       maxSpeed = (62 + st * 1.1) * dpr * sp * arenaScale * wdiff; // a bit slower than before
       accel = (150 + st * 2.6) * dpr * sp * arenaScale * wdiff;
     } else {
@@ -1130,6 +1131,14 @@
     let targetCount = Math.min(cap, 6 + jBase + Math.floor(rt * rate * jRate));
     if (bossWave) targetCount = Math.min(targetCount, MOBILE ? 14 : 22); // thin the swarm so the boss is the threat
     else if (waveType === "special") targetCount = Math.min(targetCount, MOBILE ? 18 : 30); // calmer reward wave
+    // arena adaptive heat: if you keep the screen near-empty (melting everything), surge
+    // hard — way more, tougher, faster nodes — until you're actually pressured again.
+    if (mode === "arena") {
+      const clearFrac = hunters.length / Math.max(1, targetCount);
+      if (clearFrac < 0.3) surge = Math.min(3, surge + dt * 0.28);
+      else surge = Math.max(0, surge - dt * 0.5);
+      targetCount = Math.min(360, Math.round(targetCount * (1 + surge * 0.8)));
+    }
     const grow = 1; // node size scaling removed — constant radius
     // refill toward the target ONE node at a time on a cooldown — so a powerup
     // blast (or boss pop) thins the swarm for a while instead of backfilling
@@ -1139,7 +1148,7 @@
       spawnHunter();
       // journey fills faster, waves a bit slower (killed enemies don't snap back);
       // the Hive refills quickest of all
-      let gap = mode === "journey" ? 0.42 : mode === "waves" ? 0.9 : mode === "arena" ? 0.2 : SPAWN_GAP;
+      let gap = mode === "journey" ? 0.42 : mode === "waves" ? 0.9 : mode === "arena" ? 0.2 / (1 + surge * 1.5) : SPAWN_GAP;
       if (hive) gap *= 0.5;
       nextSpawn = elapsed + gap;
     }
