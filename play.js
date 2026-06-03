@@ -1267,7 +1267,11 @@
         const dx = player.x - wp.x, dy = player.y - wp.y, reach = STAR_R * 1.6 * dpr + player.r;
         if (dx * dx + dy * dy < reach * reach) {
           const pk = wp.kind;
-          weaponLvls[pk] = (weaponLvls[pk] || 0) + 1; weapon = pk; weaponLvl = weaponLvls[pk];
+          // floor a freshly-grabbed weapon to ~60% of your best level, so switching off a
+          // maxed weapon late game doesn't leave you helpless against its over-scaled swarm
+          const best = Math.max(1, ...Object.values(weaponLvls));
+          weaponLvls[pk] = Math.max((weaponLvls[pk] || 0) + 1, Math.ceil(best * 0.6));
+          weapon = pk; weaponLvl = weaponLvls[pk];
           audio.sfx("blast"); say(WEAPONS[pk].name + ", level " + weaponLvl);
           shocks.push({ x: wp.x, y: wp.y, t: 0, max: 130 * dpr, shield: true });
           weaponPickups.splice(i, 1);
