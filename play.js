@@ -337,10 +337,9 @@
   const GROUP_SCALE = MOBILE ? 0.7 : 1;  // tighter clumps on small screens → nodes ball up, opening dodge lanes
 
   let w, h, dpr = 1, linkD2, arenaScale = 1, uiScale = 1;
-  const basePR = window.devicePixelRatio || 1; // pixel ratio at load = "100% zoom" reference
   function resize() {
     const oldW = w, oldH = h;
-    dpr = Math.min(window.devicePixelRatio || 1, 3); // higher cap → stays crisp when zoomed in
+    dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     w = canvas.width = Math.floor(innerWidth * dpr);
     h = canvas.height = Math.floor(innerHeight * dpr);
     canvas.style.width = innerWidth + "px";
@@ -350,39 +349,29 @@
     // motion and web reach with the viewport so difficulty stays consistent.
     arenaScale = Math.max(0.8, Math.min(2, Math.min(innerWidth, innerHeight) / 820));
     linkD2 = (LINK_DIST * LINK_SCALE * arenaScale * dpr) ** 2;
-    // on-canvas UI scale. Browser zoom shifts devicePixelRatio: zoom-IN pushes it past
-    // our dpr cap, zoom-OUT drops it below 1 (UI would go tiny). Compensate both ways.
-    const z = window.devicePixelRatio || 1;
-    let zf = Math.max(1, z / dpr);            // zoomed in past the cap → enlarge
-    if (z < 1) zf = Math.max(zf, Math.min(1.35, 0.9 / z)); // zoomed out → mild enlarge (capped, avoids HUD overlap)
-    uiScale = Math.max(0.9, Math.min(1.8, (Math.min(w, h) / 780) * zf));
+    uiScale = Math.max(0.9, Math.min(2, Math.min(w, h) / 780));
     // remap every position to the new dimensions so a mid-run zoom/resize doesn't
     // throw entities out of the (rescaled) coordinate space and break the game.
     // (guarded by oldW so it never runs on the first call, before state exists)
     if (oldW && oldH && (oldW !== w || oldH !== h)) {
-      const sx = w / oldW, sy = h / oldH, sR = (sx + sy) / 2; // sR also rescales radii so sizes stay consistent through a zoom
+      const sx = w / oldW, sy = h / oldH;
       const sc = (o) => { if (o) { o.x *= sx; o.y *= sy; } };
       player.r = 7 * dpr;
       sc(player); player.px *= sx; player.py *= sy;
-      for (const hn of hunters) { hn.x *= sx; hn.y *= sy; hn.r0 *= sR; hn.r *= sR; }
+      for (const hn of hunters) { hn.x *= sx; hn.y *= sy; }
       for (const g of gems) { g.x *= sx; g.y *= sy; }
       for (const p of weaponPickups) { p.x *= sx; p.y *= sy; }
       for (const p of buffPickups) { p.x *= sx; p.y *= sy; }
-      for (const bl of bullets) { bl.x *= sx; bl.y *= sy; if (bl.r) bl.r *= sR; }
+      for (const bl of bullets) { bl.x *= sx; bl.y *= sy; }
       for (const eb of enemyBullets) { eb.x *= sx; eb.y *= sy; }
-      for (const b of bosses) { b.x *= sx; b.y *= sy; b.r *= sR; }
+      for (const b of bosses) { b.x *= sx; b.y *= sy; }
       for (const s of shocks) { s.x *= sx; s.y *= sy; }
       sc(star); sc(ice); sc(shield); sc(shooter);
       if (anchor) { anchor.fx *= sx; anchor.fy *= sy; anchor.px *= sx; anchor.py *= sy; }
     }
-    // counter-scale the HTML UI (menus / score / help) so they stay a constant on-screen
-    // size regardless of browser zoom — root font drives the rem-based layout.
-    const zoom = (window.devicePixelRatio || 1) / basePR;
-    document.documentElement.style.fontSize = (16 / Math.max(0.5, Math.min(2.2, zoom))) + "px";
   }
   resize();
   addEventListener("resize", resize);
-  if (window.visualViewport) visualViewport.addEventListener("resize", resize); // catch browser/pinch zoom
 
   // player follows the pointer; start centred
   // px/py = previous frame position, vx/vy = velocity (drives ambush/predict)
