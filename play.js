@@ -349,10 +349,12 @@
     // motion and web reach with the viewport so difficulty stays consistent.
     arenaScale = Math.max(0.8, Math.min(2, Math.min(innerWidth, innerHeight) / 820));
     linkD2 = (LINK_DIST * LINK_SCALE * arenaScale * dpr) ** 2;
-    // on-canvas UI scale. Browser zoom raises devicePixelRatio past our dpr cap, so fold
-    // the uncapped zoom back in → the HUD keeps scaling with zoom instead of stalling.
-    const zoom = Math.max(1, (window.devicePixelRatio || 1) / dpr);
-    uiScale = Math.max(0.9, Math.min(2.6, (Math.min(w, h) / 780) * zoom));
+    // on-canvas UI scale. Browser zoom shifts devicePixelRatio: zoom-IN pushes it past
+    // our dpr cap, zoom-OUT drops it below 1 (UI would go tiny). Compensate both ways.
+    const z = window.devicePixelRatio || 1;
+    let zf = Math.max(1, z / dpr);          // zoomed in past the cap → enlarge
+    if (z < 0.6) zf = Math.max(zf, 0.85 / z); // zoomed way out → enlarge so UI stays legible
+    uiScale = Math.max(0.9, Math.min(3.0, (Math.min(w, h) / 780) * zf));
     // remap every position to the new dimensions so a mid-run zoom/resize doesn't
     // throw entities out of the (rescaled) coordinate space and break the game.
     // (guarded by oldW so it never runs on the first call, before state exists)
@@ -2556,9 +2558,10 @@
       ctx.lineCap = "round";
       // active powerup tints the bullets' glow (set once for the whole pass to stay cheap)
       const glowCol = buffs.overdrive > elapsed ? "120,255,255" : buffs.power > elapsed ? "255,138,96" : buffs.frenzy > elapsed ? "255,106,213" : buffs.bounce > elapsed ? "120,255,190" : null;
-      if (glowCol) { ctx.shadowColor = `rgba(${glowCol},0.95)`; ctx.shadowBlur = 9 * dpr; }
+      if (glowCol) { ctx.shadowColor = `rgba(${glowCol},1)`; ctx.shadowBlur = 16 * dpr; }
       for (const bl of bullets) {
         const br = bl.r || 5 * dpr;
+        if (glowCol) { ctx.fillStyle = `rgba(${glowCol},0.32)`; ctx.beginPath(); ctx.arc(bl.x, bl.y, br * 2.4, 0, 6.283185); ctx.fill(); } // coloured underglow halo
         const base = bl.col || "150,255,210";
         const hue = (elapsed * 320 + bl.x * 0.5 + bl.y * 0.5) % 360;
         const solid = bl.rainbow ? `hsl(${hue},100%,65%)` : `rgba(${base},0.96)`;
