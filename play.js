@@ -481,7 +481,7 @@
   let startWeapon = "dart";           // chosen on the Bullet Hell weapon-select screen
   let nextWeaponDrop = 0, nextBuffDrop = 0;
   let weaponPickups = [], buffPickups = []; // {x, y, t, kind, born} — multiple at once, despawn after PICKUP_TTL
-  const buffs = { frenzy: 0, power: 0, bounce: 0, overdrive: 0, blade: 0, dual: 0, shield: 0 }; // each holds the elapsed time it expires at
+  const buffs = { frenzy: 0, power: 0, bounce: 0, overdrive: 0, blade: 0, dual: 0, shield: 0, repel: 0 }; // each holds the elapsed time it expires at
   let dualWeapon = "dart", nextDual = 0; // Dual-wield buff: a second weapon fired alongside the main
   let bladeAng = 0, bladeVel = 0; // melee blade angle + angular velocity (follows mouse w/ momentum; Blade buff)
   let nextCluster = 0;            // arena: timer for spawning tight node clusters
@@ -711,10 +711,7 @@
     else if (k === "levelup") { weaponLvls[weapon] = weaponLvl + 1; weaponLvl = weaponLvls[weapon]; audio.sfx("blast"); }
     else if (k === "dual") { const pool = WEAPON_KINDS.filter((x2) => x2 !== weapon); dualWeapon = pool[(Math.random() * pool.length) | 0]; buffs.dual = elapsed + 11; nextDual = 0; audio.sfx("blast"); }
     else if (k === "starbomb") { starBlast(); }
-    else if (k === "repel") { // shove the whole swarm outward (smooth knock-velocity)
-      for (const hn of hunters) { const dx = hn.x - player.x, dy = hn.y - player.y, d = Math.hypot(dx, dy) || 1; const f = (1 - Math.min(1, d / (460 * dpr))) * 1500 * dpr; hn.kvx = (hn.kvx || 0) + (dx / d) * f; hn.kvy = (hn.kvy || 0) + (dy / d) * f; }
-      shocks.push({ x: player.x, y: player.y, t: 0, max: 460 * dpr, shield: true }); audio.sfx("freeze");
-    }
+    else if (k === "repel") { buffs.repel = elapsed + 8; audio.sfx("freeze"); shocks.push({ x: player.x, y: player.y, t: 0, max: 460 * dpr, shield: true }); } // timed keep-away field
     else { buffs[k] = elapsed + 9; audio.sfx("blast"); } // frenzy / power / bounce
     say(BUFF_NAME[k] || k);
     shocks.push({ x, y, t: 0, max: 130 * dpr, shield: true });
@@ -758,7 +755,7 @@
     weaponPickups = []; buffPickups = [];
     nextWeaponDrop = 3 + Math.random() * 2; nextBuffDrop = 2.5 + Math.random() * 2;
     arenaKeys.w = arenaKeys.a = arenaKeys.s = arenaKeys.d = false; fireHold = false;
-    buffs.frenzy = buffs.power = buffs.bounce = buffs.overdrive = buffs.blade = buffs.dual = buffs.shield = 0; bladeAng = 0; bladeVel = 0; nextDual = 0;
+    buffs.frenzy = buffs.power = buffs.bounce = buffs.overdrive = buffs.blade = buffs.dual = buffs.shield = buffs.repel = 0; bladeAng = 0; bladeVel = 0; nextDual = 0;
     arenaBossIdx = 0; nextArenaBoss = 12 + Math.random() * 4; bossSpawnAt = 0; flashUntil = 0; lowHpFrom = 1e9;
     playerMaxHp = mode === "arena" ? 5 : 1; playerHp = playerMaxHp;
     regenShield = true; regenReadyAt = 0; surge = 0;
@@ -1256,6 +1253,10 @@
     if (mode === "arena") {
       if (!regenShield && elapsed >= regenReadyAt) regenShield = true; // shield finished recharging
       if (buffs.shield > 0 && buffs.shield <= elapsed) { audio.setShield(false); buffs.shield = 0; } // timed shield ended → music back to normal
+      if (buffs.repel > elapsed) { // keep-away field: continuously push nearby nodes outward
+        const fieldR = 230 * dpr * arenaScale;
+        for (const hn of hunters) { const dx = hn.x - player.x, dy = hn.y - player.y, d = Math.hypot(dx, dy) || 1; if (d < fieldR) { const f = (1 - d / fieldR) * 1000 * dpr * dt; hn.kvx = (hn.kvx || 0) + (dx / d) * f; hn.kvy = (hn.kvy || 0) + (dy / d) * f; } }
+      }
       // weapon drops — several can sit on the field at once
       if (weaponPickups.length < 3 && elapsed >= nextWeaponDrop) {
         weaponPickups.push({ x: rand(w * 0.12, w * 0.88), y: rand(h * 0.14, h * 0.86), t: 0, kind: WEAPON_KINDS[(Math.random() * WEAPON_KINDS.length) | 0], born: elapsed });
@@ -2342,6 +2343,7 @@
       if (buffs.frenzy > elapsed) active.push(["FRENZY", "255,106,213"]);
       if (buffs.power > elapsed) active.push(["POWER", "255,138,96"]);
       if (buffs.bounce > elapsed) active.push(["BOUNCE", "120,255,190"]);
+      if (buffs.repel > elapsed) active.push(["REPEL", "150,210,255"]);
       if (buffs.overdrive > elapsed) active.push(["OVERDRIVE", "120,255,255"]);
       if (buffs.blade > elapsed) active.push(["BLADE", "230,245,255"]);
       if (buffs.dual > elapsed) active.push(["DUAL " + (WEAPONS[dualWeapon] ? WEAPONS[dualWeapon].name.toUpperCase() : ""), "255,180,90"]);
