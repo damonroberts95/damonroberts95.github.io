@@ -2572,11 +2572,11 @@
       ctx.save();
       ctx.lineCap = "round";
       // active powerup tints the bullets' glow (set once for the whole pass to stay cheap)
-      const glowCol = buffs.overdrive > elapsed ? "120,255,255" : buffs.power > elapsed ? "255,138,96" : buffs.frenzy > elapsed ? "255,106,213" : buffs.bounce > elapsed ? "120,255,190" : null;
-      if (glowCol) { ctx.shadowColor = `rgba(${glowCol},1)`; ctx.shadowBlur = 16 * dpr; }
+      // active powerup glows the bullet's own outline (Overdrive excluded — it's already rainbow)
+      const glowCol = buffs.power > elapsed ? "255,138,96" : buffs.frenzy > elapsed ? "255,106,213" : buffs.bounce > elapsed ? "120,255,190" : null;
+      if (glowCol) { ctx.shadowColor = `rgba(${glowCol},1)`; ctx.shadowBlur = 14 * dpr; }
       for (const bl of bullets) {
         const br = bl.r || 5 * dpr;
-        if (glowCol) { ctx.fillStyle = `rgba(${glowCol},0.32)`; ctx.beginPath(); ctx.arc(bl.x, bl.y, br * 2.4, 0, 6.283185); ctx.fill(); } // coloured underglow halo
         const base = bl.col || "150,255,210";
         const hue = (elapsed * 320 + bl.x * 0.5 + bl.y * 0.5) % 360;
         const solid = bl.rainbow ? `hsl(${hue},100%,65%)` : `rgba(${base},0.96)`;
