@@ -309,6 +309,9 @@
           synth(140, t, 0.75, { gain: 0.4, detune: 22, voices: 3, glide: 32, cut: 1800, q: 3, sub: true, dest: fx });
           synth(280, t, 0.5, { type: "square", gain: 0.16, glide: 2400, cut: 6000, dest: fx });
           noiseHit(t, 0.55, 0.4, fx, 280);
+        } else if (name === "boom") {         // soft, low explosion thud (Missile)
+          synth(80, t, 0.42, { type: "sine", gain: 0.32, glide: 34, cut: 600, q: 1.2, sub: true, dest: fx });
+          noiseHit(t, 0.22, 0.14, fx, 160);
         } else if (name === "freeze") {       // crystalline descending detuned sines
           [0, 7, 12, 19].forEach((iv, i) => { const f = mtof(96 - iv); synth(f, t + i * 0.05, 0.7 - i * 0.1, { type: "sine", gain: 0.16, detune: 5, voices: 2, glide: f * 0.5, cut: 9000, q: 1, dest: fx }); });
         } else if (name === "death") {        // detuned saw fall, filter slams shut
@@ -473,7 +476,10 @@
   let startWeapon = "dart";           // chosen on the Bullet Hell weapon-select screen
   let nextWeaponDrop = 0, nextBuffDrop = 0;
   let weaponPickup = null, buffPickup = null; // {x, y, t, kind, born} — despawn after PICKUP_TTL
-  const buffs = { frenzy: 0, power: 0, bounce: 0, overdrive: 0 }; // each holds the elapsed time it expires at
+  const buffs = { frenzy: 0, power: 0, bounce: 0, overdrive: 0, blade: 0, dual: 0 }; // each holds the elapsed time it expires at
+  let dualWeapon = "dart", nextDual = 0; // Dual-wield buff: a second weapon fired alongside the main
+  let bladeAng = 0, bladeVel = 0; // melee blade angle + angular velocity (follows mouse w/ momentum; Blade buff)
+  let nextCluster = 0;            // arena: timer for spawning tight node clusters
   let nextArenaBoss = 0, arenaBossIdx = 0; // boss spawn cadence + which archetype is next
   let bossSpawnAt = 0, flashFrom = 0, flashUntil = 0, flashCol = "255,40,60", lowHpFrom = 1e9; // warning/flash timing
   let playerHp = 1, playerMaxHp = 1;  // arena: multiple hits before death (other modes stay one-hit)
@@ -488,18 +494,18 @@
     rapid:  { name: "Rapid",  gap: 0.085, spd: 900, r: 4,  count: 1, spread: 0.10, pierce: 0, dmg: 1.0, homing: false },
     homing: { name: "Seeker", gap: 0.30, spd: 560, r: 6,  count: 1, spread: 0,    pierce: 0, dmg: 1.9, homing: true },
     ricochet:{ name: "Ricochet", gap: 0.17, spd: 780, r: 5, count: 1, spread: 0,  pierce: 1, dmg: 2.2, homing: false, bounce: true },
-    mortar: { name: "Missile", gap: 0.5,  spd: 540, r: 7, count: 1, spread: 0,    pierce: 0, dmg: 3, homing: false, explode: true },
+    mortar: { name: "Missile", gap: 0.5,  spd: 540, r: 4, count: 1, spread: 0,    pierce: 0, dmg: 3, homing: false, explode: true },
     wave:   { name: "Wave",   gap: 0.46, spd: 470, r: 6, count: 1, spread: 0,    pierce: 8, dmg: 3, homing: false },
   };
   const WEAPON_KINDS = ["spread", "rapid", "homing", "ricochet", "mortar", "wave"]; // droppable (dart is the starting weapon)
-  const BUFF_KINDS = ["shield", "frenzy", "power", "bounce", "freeze", "heal", "levelup", "overdrive"];
+  const BUFF_KINDS = ["shield", "frenzy", "power", "bounce", "freeze", "heal", "levelup", "overdrive", "blade", "dual", "starbomb"];
   const ARENA_BOSSES = ["spiral", "burst", "charger", "splitter", "weaver"];
 
   // effective weapon stats for the current kind + level. Each level: bigger bullets,
   // faster cadence, +10% damage; plus a kind-specific bump (spread → more/wider pellets,
   // wave → an extra simultaneous wave every 3 levels, lance → +1 pierce, dart/rapid → extra stream).
-  function weaponStats(lvlOverride) {
-    const b = WEAPONS[weapon], lvl = lvlOverride || weaponLvl;
+  function weaponStats(lvlOverride, kindOverride) {
+    const wk = kindOverride || weapon, b = WEAPONS[wk], lvl = lvlOverride || weaponLvl;
     const s = {
       name: b.name,
       gap: Math.max(0.04, b.gap * Math.pow(0.89, lvl - 1)),
@@ -511,13 +517,39 @@
       dmg: b.dmg * (1 + 0.16 * (lvl - 1)),   // +16% damage per level
       waves: 1,
     };
-    if (weapon === "spread") { s.count = Math.min(13, b.count + (lvl - 1)); s.spread = b.spread + 0.05 * (lvl - 1); } // more pellets, wider fan
-    else if (weapon === "wave") s.waves = 1 + Math.floor((lvl - 1) / 3);    // +1 simultaneous wave every 3 levels
-    else if (weapon === "rapid") s.count = lvl >= 4 ? 2 : 1;                // twin stream at high level
-    else if (weapon === "homing") s.count = lvl >= 6 ? 2 : 1; // at most two seekers (kept cheap + not OP)
-    else if (weapon === "ricochet") { s.count = lvl >= 4 ? 2 : 1; s.pierce = b.pierce + Math.floor((lvl - 1) / 2); } // more ricochets + punches through
-    else if (weapon === "dart") s.count = lvl >= 6 ? 3 : lvl >= 3 ? 2 : 1;  // double / triple dart
+    if (wk === "spread") { s.count = Math.min(13, b.count + (lvl - 1)); s.spread = b.spread + 0.05 * (lvl - 1); } // more pellets, wider fan
+    else if (wk === "wave") s.waves = 1 + Math.floor((lvl - 1) / 3);    // +1 simultaneous wave every 3 levels
+    else if (wk === "rapid") s.count = lvl >= 4 ? 2 : 1;                // twin stream at high level
+    else if (wk === "homing") s.count = lvl >= 6 ? 2 : 1; // at most two seekers (kept cheap + not OP)
+    else if (wk === "ricochet") { s.count = lvl >= 4 ? 2 : 1; s.pierce = b.pierce + Math.floor((lvl - 1) / 2); } // more ricochets + punches through
+    else if (wk === "dart") s.count = lvl >= 6 ? 3 : lvl >= 3 ? 2 : 1;  // double / triple dart
     return s;
+  }
+
+  // fire one weapon (kind + level) toward the aim with slight autoaim — used by the main
+  // weapon and, while Dual-wield is active, the second weapon. Caller handles cadence + sfx.
+  function fireWeapon(wk, lvl) {
+    const ws = weaponStats(lvl, wk), power = buffs.power > elapsed;
+    const bspd = ws.spd * dpr * arenaScale;
+    const r = ws.r * (power ? 1.4 : 1) * 1.55 * dpr;
+    const pierce = ws.pierce + (power ? 3 : 0);
+    const bounce = buffs.bounce > elapsed || WEAPONS[wk].bounce;
+    const dmg = ws.dmg * (power ? 1.5 : 1);
+    let base = Math.atan2(aimY - player.y, aimX - player.x), cone = 0.16, adj = 0;
+    for (const hn of hunters) { if (hn.dead) continue; let da = Math.atan2(hn.y - player.y, hn.x - player.x) - base; while (da > Math.PI) da -= 6.283185; while (da < -Math.PI) da += 6.283185; if (Math.abs(da) < cone) { cone = Math.abs(da); adj = da; } }
+    for (const b of bosses) { let da = Math.atan2(b.y - player.y, b.x - player.x) - base; while (da > Math.PI) da -= 6.283185; while (da < -Math.PI) da += 6.283185; if (Math.abs(da) < cone) { cone = Math.abs(da); adj = da; } }
+    base += adj * 0.35;
+    const maxed = lvl >= WEAPON_MAXLVL, wcol = WEAPON_COLOR[wk] || "150,255,210";
+    const expl = WEAPONS[wk].explode, boom = expl ? (95 + lvl * 8) * dpr * arenaScale : 0;
+    const knock = (110 + lvl * 8) * dpr; // bullets shove surviving nodes (physics w/ the HP system)
+    if (wk === "wave") {
+      const wspd = ws.spd * dpr * arenaScale, maxR = 460 * dpr * arenaScale;
+      for (let k = 0; k < ws.waves; k++) arcs.push({ x: player.x, y: player.y, ang: base, age: -k * 0.13, spd: wspd, maxR, half: 0.42, band: (4 + ws.r) * dpr, dmg, rainbow: maxed, hit: new Set(), hitB: new Set() });
+    } else {
+      const homing = WEAPONS[wk].homing, n = ws.count, fan = ws.spread || (n > 1 ? 0.12 : 0), angles = [];
+      for (let k = 0; k < n; k++) angles.push(base + (n === 1 ? 0 : (k / (n - 1) - 0.5) * fan) + (Math.random() * 2 - 1) * fan * 0.12);
+      for (const a of angles) bullets.push({ x: player.x, y: player.y, vx: Math.cos(a) * bspd, vy: Math.sin(a) * bspd, life: bounce ? 2.4 : homing ? 2.6 : 1.4, r, pierce, dmg, bounce, homing, explode: expl, boom, knock, spd: bspd, col: wcol, kind: wk, rainbow: maxed, hitB: null });
+    }
   }
 
   // ---- modes: classic (endless), waves (themed waves), journey (story levels) ----
@@ -614,6 +646,7 @@
       seed: rand(0, 6.283185), // phase offset so same-kind nodes desync
       joltCd: 0,
       age: 0,
+      hp: nodeHp(),
       life: rand(35, 60), // seconds before a lone node gives up and flies off
     });
   }
@@ -621,31 +654,32 @@
   // HUD points — journey shows the running total (banked + current level), so it persists across levels
   const showPts = () => { ptsEl.textContent = String(points + (mode === "journey" ? journeyPts : 0)); };
 
-  // Mortar explosion — AoE that kills nodes (marked dead) + chips bosses in radius. Returns
-  // true if anything was killed, so the caller can trigger the dead-node sweep.
+  // arena nodes have HP that scales with time + weapon level (1 elsewhere → one-shot)
+  const nodeHp = () => (mode === "arena" ? 1 + Math.floor(elapsed / 20) + Math.floor((weaponLvl - 1) / 3) : 1);
+
+  // arena: drop a tight same-colour blob just off an edge → drifts in as a tanky clump
+  function spawnCluster() {
+    const edge = (Math.random() * 4) | 0, m = 80 * dpr;
+    let cx, cy;
+    if (edge === 0) { cx = rand(w * 0.15, w * 0.85); cy = -m; }
+    else if (edge === 1) { cx = w + m; cy = rand(h * 0.15, h * 0.85); }
+    else if (edge === 2) { cx = rand(w * 0.15, w * 0.85); cy = h + m; }
+    else { cx = -m; cy = rand(h * 0.15, h * 0.85); }
+    const color = PALETTE[(Math.random() * PALETTE.length) | 0];
+    const n = 5 + ((Math.random() * 4) | 0);
+    for (let i = 0; i < n; i++) {
+      const a = rand(0, 6.283185), rr = rand(0, 42) * dpr, r0 = rand(2.6, 4.4) * dpr * 1.85;
+      hunters.push({ id: hunterId++, x: cx + Math.cos(a) * rr, y: cy + Math.sin(a) * rr, vx: 0, vy: 0, r: r0, r0, color, p: PERSONA[color], seed: rand(0, 6.283185), joltCd: 0, age: 0, hp: nodeHp() + 1, life: rand(45, 75) });
+    }
+  }
+  // apply damage; clumped nodes (many same-colour neighbours) shrug off more → tankier in packs
+  const hurtNode = (hn, dmg) => { hn.hp -= dmg / (1 + (hn.snb || 0) * 0.12); return hn.hp <= 0; };
+
+  // Missile explosion — an expanding star-bomb-style shock: the front clears nodes it
+  // reaches and chips bosses once (dmg). Handled by the shock-kill pass in drawScene.
   function explode(x, y, rad, dmg) {
-    shocks.push({ x, y, t: 0, max: rad * 2 }); audio.sfx("blast");
-    let killed = false;
-    const r2 = rad * rad;
-    for (let j = 0; j < hunters.length; j++) {
-      const hn = hunters[j]; if (hn.dead) continue;
-      const dx = hn.x - x, dy = hn.y - y;
-      if (dx * dx + dy * dy < r2) { hn.dead = true; points += KILL_VAL; killed = true; }
-    }
-    for (let bi = bosses.length - 1; bi >= 0; bi--) {
-      const b = bosses[bi]; if (!b.maxHp) continue;
-      const dx = b.x - x, dy = b.y - y, rr = rad + b.r;
-      if (dx * dx + dy * dy < rr * rr) {
-        b.hp -= dmg;
-        if (b.hp <= 0) {
-          popInto(b.x, b.y, b.color, b.kind === "splitter" ? 16 : 9);
-          points += BOSS_VAL; shocks.push({ x: b.x, y: b.y, t: 0, max: 240 * dpr, rainbow: true });
-          bosses.splice(bi, 1); if (mode === "arena" && bosses.length === 0) nextArenaBoss = elapsed + 8 + Math.random() * 5;
-        }
-      }
-    }
-    if (killed) showPts();
-    return killed;
+    shocks.push({ x, y, t: 0, max: rad, kill: true, rainbow: true, dmg, hitB: new Set() });
+    audio.sfx("boom");
   }
 
   function reset() {
@@ -679,7 +713,7 @@
     weaponPickup = null; buffPickup = null;
     nextWeaponDrop = 3 + Math.random() * 2; nextBuffDrop = 2.5 + Math.random() * 2;
     arenaKeys.w = arenaKeys.a = arenaKeys.s = arenaKeys.d = false; fireHold = false;
-    buffs.frenzy = buffs.power = buffs.bounce = buffs.overdrive = 0;
+    buffs.frenzy = buffs.power = buffs.bounce = buffs.overdrive = buffs.blade = buffs.dual = 0; bladeAng = 0; bladeVel = 0; nextDual = 0;
     arenaBossIdx = 0; nextArenaBoss = 12 + Math.random() * 4; bossSpawnAt = 0; flashUntil = 0; lowHpFrom = 1e9;
     playerMaxHp = mode === "arena" ? 5 : 1; playerHp = playerMaxHp;
     regenShield = true; regenReadyAt = 0;
@@ -701,6 +735,8 @@
   function setupArena() {
     pickBiome(true, false); scheduleBiomeShift();
     banner = { big: "BULLET HELL", sub: "WASD to move · autofires at your aim", until: 3.2 };
+    nextCluster = 6 + Math.random() * 4;
+    say("Bullet hell");
   }
 
   const BOSS_VAL = 50; // points for destroying the boss
@@ -739,6 +775,7 @@
         p: PERSONA[color],
         seed: rand(0, 6.283185),
         joltCd: 0, age: 0,
+        hp: nodeHp(),
         life: rand(35, 60),
         safe: elapsed + 0.6, // can't kill the player for a beat after popping out
       });
@@ -1026,8 +1063,8 @@
     } else if (mode === "arena") {
       // Arena: gentle base ramp, but a stronger weapon ramps the threat with it
       const wdiff = 1 + (weaponLvl - 1) * 0.05; // weapon level → tougher swarm
-      maxSpeed = (78 + st * 1.5) * dpr * sp * arenaScale * wdiff;
-      accel = (170 + st * 3) * dpr * sp * arenaScale * wdiff;
+      maxSpeed = (62 + st * 1.1) * dpr * sp * arenaScale * wdiff; // a bit slower than before
+      accel = (150 + st * 2.6) * dpr * sp * arenaScale * wdiff;
     } else {
       // Classic/Journey: ramp with active time; journey escalates a touch per level
       // (mobile journey nudged ~10% harder).
@@ -1040,7 +1077,7 @@
     const cap = Math.round((MOBILE ? 32 : mode === "arena" ? 270 : 130) * arenaScale * (hive ? 1.45 : 1)), rate = (MOBILE ? 0.6 : 1.15) * (hive ? 1.5 : 1);
     // Journey resets elapsed each level, so it would re-ramp from sparse every time.
     // Start fuller, ramp faster, and escalate the floor with the level number.
-    const jBase = mode === "journey" ? 4 + journeyIdx : mode === "waves" ? 6 : mode === "arena" ? 22 + (weaponLvl - 1) * 2 : 0;
+    const jBase = mode === "journey" ? 4 + journeyIdx : mode === "waves" ? 6 : mode === "arena" ? 26 + (weaponLvl - 1) * 4 : 0;
     const jRate = mode === "journey" ? 1.25 : mode === "waves" ? 1.25 : mode === "arena" ? 2.1 : 1;
     let targetCount = Math.min(cap, 6 + jBase + Math.floor(rt * rate * jRate));
     if (bossWave) targetCount = Math.min(targetCount, MOBILE ? 14 : 22); // thin the swarm so the boss is the threat
@@ -1054,7 +1091,7 @@
       spawnHunter();
       // journey fills faster, waves a bit slower (killed enemies don't snap back);
       // the Hive refills quickest of all
-      let gap = mode === "journey" ? 0.42 : mode === "waves" ? 0.9 : mode === "arena" ? 0.28 : SPAWN_GAP;
+      let gap = mode === "journey" ? 0.42 : mode === "waves" ? 0.9 : mode === "arena" ? 0.2 : SPAWN_GAP;
       if (hive) gap *= 0.5;
       nextSpawn = elapsed + gap;
     }
@@ -1195,6 +1232,9 @@
             else if (k === "freeze") { frozenUntil = elapsed + 4; audio.sfx("freeze"); shocks.push({ x: buffPickup.x, y: buffPickup.y, t: 0, max: 320 * dpr, ice: true }); }
             else if (k === "heal") { playerHp = Math.min(playerMaxHp, playerHp + 1); audio.sfx("shield"); } // restore a life
             else if (k === "levelup") { weaponLvls[weapon] = weaponLvl + 1; weaponLvl = weaponLvls[weapon]; audio.sfx("blast"); } // bump the current weapon a level
+            else if (k === "dual") { const pool = ["dart", ...WEAPON_KINDS].filter((x) => x !== weapon); dualWeapon = pool[(Math.random() * pool.length) | 0]; buffs.dual = elapsed + 11; nextDual = 0; audio.sfx("blast"); } // 2nd weapon for a bit
+            else if (k === "starbomb") { starBlast(); } // instant screen-clearing blast wave
+
             else { buffs[k] = elapsed + 9; audio.sfx("blast"); } // frenzy / power / bounce
             say(BUFF_NAME[k] || k);
             shocks.push({ x: buffPickup.x, y: buffPickup.y, t: 0, max: 130 * dpr, shield: true });
@@ -1211,6 +1251,42 @@
         nextArenaBoss = elapsed + 13 + Math.random() * 7;
       }
       if (bossSpawnAt && elapsed >= bossSpawnAt) { spawnArenaBoss(); bossSpawnAt = 0; }
+      // periodic tight clusters of tanky nodes (alongside the steady spawn)
+      if (elapsed >= nextCluster && hunters.length < 300) { spawnCluster(); nextCluster = elapsed + 5 + Math.random() * 4; }
+      // Blade buff — a spinning melee blade: slices nodes in its sweep, swirls the rest
+      // away (physics), and grinds bosses it touches
+      if (buffs.blade > elapsed) {
+        const blLen = 124 * dpr * arenaScale, blW = 26 * dpr;
+        // follows the mouse with momentum — swings toward the aim, overshoots, settles (heavy sword)
+        const aimAng = Math.atan2(aimY - player.y, aimX - player.x);
+        let dA = aimAng - bladeAng; while (dA > Math.PI) dA -= 6.283185; while (dA < -Math.PI) dA += 6.283185;
+        bladeVel = (bladeVel + dA * 75 * dt) * Math.pow(0.025, dt);
+        bladeAng += bladeVel * dt;
+        const ca = Math.cos(bladeAng), sa = Math.sin(bladeAng), tx = -sa, ty = ca; // tx,ty = swing tangential
+        // blade damage scales with time + weapon level; faster swing also bites harder
+        const bdmg = (8 + elapsed * 0.5 + weaponLvl * 1.2) * (0.6 + Math.min(1.4, Math.abs(bladeVel) / 6)) * dt;
+        let sliced = false;
+        for (let j = 0; j < hunters.length; j++) {
+          const hn = hunters[j]; if (hn.dead) continue;
+          const ax = hn.x - player.x, ay = hn.y - player.y;
+          const proj = Math.max(0, Math.min(blLen, ax * ca + ay * sa));
+          const dx = hn.x - (player.x + ca * proj), dy = hn.y - (player.y + sa * proj), reach = blW + hn.r;
+          if (dx * dx + dy * dy < reach * reach) { if (hurtNode(hn, bdmg)) { hn.dead = true; points += KILL_VAL; sliced = true; } const kk = 220 * dpr; hn.vx += tx * kk; hn.vy += ty * kk; } // sliced + flung along the swing
+          else if (ax * ax + ay * ay < (blLen * 1.15) ** 2) { const k = 300 * dpr * dt; hn.vx += tx * k; hn.vy += ty * k; } // tangential swirl
+        }
+        if (sliced) { showPts(); hunters = hunters.filter((hn) => !hn.dead); shocks.push({ x: player.x + ca * blLen, y: player.y + sa * blLen, t: 0, max: 44 * dpr }); }
+        for (let bi = bosses.length - 1; bi >= 0; bi--) {
+          const b = bosses[bi]; if (!b.maxHp) continue;
+          const ax = b.x - player.x, ay = b.y - player.y;
+          const proj = Math.max(0, Math.min(blLen, ax * ca + ay * sa));
+          const dx = b.x - (player.x + ca * proj), dy = b.y - (player.y + sa * proj), reach = blW + b.r;
+          if (dx * dx + dy * dy < reach * reach) {
+            b.hp -= bdmg * 7; // bosses take the scaled blade damage too
+            const d = Math.hypot(ax, ay) || 1; b.vx += (ax / d) * 140 * dpr * dt; b.vy += (ay / d) * 140 * dpr * dt;
+            if (b.hp <= 0) { popInto(b.x, b.y, b.color, b.kind === "splitter" ? 16 : 9); points += BOSS_VAL; showPts(); shocks.push({ x: b.x, y: b.y, t: 0, max: 240 * dpr, rainbow: true }); audio.sfx("blast"); bosses.splice(bi, 1); if (bosses.length === 0) nextArenaBoss = elapsed + 8 + Math.random() * 5; }
+          }
+        }
+      }
     }
 
     const frozen = elapsed < frozenUntil;
@@ -1386,48 +1462,20 @@
       audio.sfx("pop");
     }
     // arena: autofire toward the mouse aim (holding the mouse is a temporary ceasefire)
-    if (mode === "arena" && !fireHold && playerAlpha > 0.5 && elapsed >= nextBullet) {
-      const odrive = buffs.overdrive > elapsed; // temp +10 levels → always rainbow
-      const ws = weaponStats(odrive ? weaponLvl + 10 : weaponLvl);
-      const power = buffs.power > elapsed;
-      const gap = ws.gap * (buffs.frenzy > elapsed ? 0.5 : 1);
-      const bspd = ws.spd * dpr * arenaScale;
-      const r = ws.r * (power ? 1.4 : 1) * 2.1 * dpr; // bullets chunky → easier hits
-      const pierce = ws.pierce + (power ? 3 : 0);
-      const bounce = buffs.bounce > elapsed || WEAPONS[weapon].bounce;
-      const dmg = ws.dmg * (power ? 1.5 : 1);
-      let base = Math.atan2(aimY - player.y, aimX - player.x);
-      // very slight autoaim — nudge toward whichever target sits closest to the aim line
-      let cone = 0.16, adj = 0, pull = 0.35;
-      for (const hn of hunters) {
-        let da = Math.atan2(hn.y - player.y, hn.x - player.x) - base;
-        while (da > Math.PI) da -= 6.283185; while (da < -Math.PI) da += 6.283185;
-        if (Math.abs(da) < cone) { cone = Math.abs(da); adj = da; }
+    if (mode === "arena" && !fireHold && playerAlpha > 0.5) {
+      const odrive = buffs.overdrive > elapsed, frenzy = buffs.frenzy > elapsed ? 0.5 : 1;
+      if (elapsed >= nextBullet) {
+        const eff = odrive ? weaponLvl + 10 : weaponLvl;
+        fireWeapon(weapon, eff);
+        nextBullet = elapsed + weaponStats(eff, weapon).gap * frenzy;
+        audio.sfx("pop");
       }
-      for (const b of bosses) {
-        let da = Math.atan2(b.y - player.y, b.x - player.x) - base;
-        while (da > Math.PI) da -= 6.283185; while (da < -Math.PI) da += 6.283185;
-        if (Math.abs(da) < cone) { cone = Math.abs(da); adj = da; }
+      if (buffs.dual > elapsed && elapsed >= nextDual) { // Dual-wield: a second weapon fires too
+        const dl = (weaponLvls[dualWeapon] || 1) + (odrive ? 10 : 0);
+        fireWeapon(dualWeapon, dl);
+        nextDual = elapsed + weaponStats(dl, dualWeapon).gap * frenzy;
+        audio.sfx("pop");
       }
-      base += adj * pull;
-      const maxed = odrive || weaponLvl >= WEAPON_MAXLVL; // Lv10 (or Overdrive) → rainbow projectiles
-      const wcol = WEAPON_COLOR[weapon] || "150,255,210";
-      const effLvl = odrive ? weaponLvl + 10 : weaponLvl;
-      const expl = WEAPONS[weapon].explode, boom = expl ? (62 + effLvl * 6) * dpr * arenaScale : 0;
-      if (weapon === "wave") {
-        // expanding crescent shockwaves launched from the player along the aim
-        const wspd = ws.spd * dpr * arenaScale, maxR = 460 * dpr * arenaScale;
-        for (let k = 0; k < ws.waves; k++) {
-          arcs.push({ x: player.x, y: player.y, ang: base, age: -k * 0.13, spd: wspd, maxR, half: 0.42, band: (4 + ws.r) * dpr, dmg, rainbow: maxed, hit: new Set(), hitB: new Set() });
-        }
-      } else {
-        const homing = WEAPONS[weapon].homing;
-        const n = ws.count, fan = ws.spread || (n > 1 ? 0.12 : 0), angles = [];
-        for (let k = 0; k < n; k++) angles.push(base + (n === 1 ? 0 : (k / (n - 1) - 0.5) * fan) + (Math.random() * 2 - 1) * fan * 0.12);
-        for (const a of angles) bullets.push({ x: player.x, y: player.y, vx: Math.cos(a) * bspd, vy: Math.sin(a) * bspd, life: bounce ? 2.4 : homing ? 2.6 : 1.4, r, pierce, dmg, bounce, homing, explode: expl, boom, spd: bspd, col: wcol, kind: weapon, rainbow: maxed, hitB: null });
-      }
-      nextBullet = elapsed + gap;
-      audio.sfx("pop");
     }
     // hunter spatial grid for bullet collisions (kills are marked, then filtered once
     // after the bullet + arc passes — avoids O(bullets × hunters) every frame)
@@ -1468,7 +1516,7 @@
           bl.vx = Math.cos(cur) * sp; bl.vy = Math.sin(cur) * sp;
         }
       }
-      bl.x += bl.vx * dt; bl.y += bl.vy * dt; bl.life -= dt;
+      bl.x += bl.vx * dt; bl.y += bl.vy * dt; bl.life -= dt; bl.age = (bl.age || 0) + dt;
       if (bl.bounce) { // ricochet off the walls (arena Bounce buff)
         if (bl.x < 0) { bl.x = 0; bl.vx = Math.abs(bl.vx); } else if (bl.x > w) { bl.x = w; bl.vx = -Math.abs(bl.vx); }
         if (bl.y < 0) { bl.y = 0; bl.vy = Math.abs(bl.vy); } else if (bl.y > h) { bl.y = h; bl.vy = -Math.abs(bl.vy); }
@@ -1489,9 +1537,9 @@
             const dx = hn.x - bl.x, dy = hn.y - bl.y, rr = hn.r + br;
             if (dx * dx + dy * dy < rr * rr) {
               if (bl.explode) { explode(bl.x, bl.y, bl.boom, bl.dmg); bulletKills = true; spent = true; break; }
-              hn.dead = true; bulletKills = true;
-              points += KILL_VAL;
-              shocks.push({ x: bl.x, y: bl.y, t: 0, max: 46 * dpr });
+              shocks.push({ x: bl.x, y: bl.y, t: 0, max: 30 * dpr });
+              if (hurtNode(hn, bl.dmg)) { hn.dead = true; bulletKills = true; points += KILL_VAL; shocks.push({ x: bl.x, y: bl.y, t: 0, max: 46 * dpr }); }
+              else { const bs = Math.hypot(bl.vx, bl.vy) || 1, kk = bl.knock || 110 * dpr; hn.vx += (bl.vx / bs) * kk; hn.vy += (bl.vy / bs) * kk; } // shove survivors
               if ((bl.pierce = (bl.pierce | 0) - 1) < 0) { spent = true; break; }
             }
           }
@@ -1551,13 +1599,15 @@
       const rad = ar.age * ar.spd;
       if (rad > ar.maxR) { arcs.splice(i, 1); continue; }
       const innr = rad - ar.band, inner2 = innr > 0 ? innr * innr : 0, outer2 = (rad + ar.band) * (rad + ar.band);
+      let arcKill = false;
       for (let j = hunters.length - 1; j >= 0; j--) {
-        const hn = hunters[j]; if (ar.hit.has(hn)) continue;
+        const hn = hunters[j]; if (hn.dead || ar.hit.has(hn)) continue;
         const dx = hn.x - ar.x, dy = hn.y - ar.y, d2 = dx * dx + dy * dy;
         if (d2 < inner2 || d2 > outer2) continue;
         let da = Math.atan2(dy, dx) - ar.ang; while (da > Math.PI) da -= 6.283185; while (da < -Math.PI) da += 6.283185;
-        if (Math.abs(da) <= ar.half) { hunters.splice(j, 1); points += KILL_VAL; showPts(); ar.hit.add(hn); shocks.push({ x: hn.x, y: hn.y, t: 0, max: 36 * dpr }); }
+        if (Math.abs(da) <= ar.half) { ar.hit.add(hn); if (hurtNode(hn, ar.dmg)) { hn.dead = true; points += KILL_VAL; arcKill = true; shocks.push({ x: hn.x, y: hn.y, t: 0, max: 36 * dpr }); } }
       }
+      if (arcKill) { showPts(); hunters = hunters.filter((hn) => !hn.dead); }
       for (let bi = bosses.length - 1; bi >= 0; bi--) {
         const b = bosses[bi]; if (!b.maxHp || ar.hitB.has(b)) continue;
         const dx = b.x - ar.x, dy = b.y - ar.y, d2 = dx * dx + dy * dy;
@@ -1998,9 +2048,9 @@
   const BUFF_STYLE = {
     shield: ["150,225,255", "⬡"], frenzy: ["255,106,213", "✸"],
     power:  ["255,138,96", "✦"],  bounce: ["120,255,190", "⟲"], freeze: ["190,240,255", "❄"],
-    heal:   ["255,90,120", "♥"], levelup: ["255,236,120", "▲"], overdrive: ["120,255,255", "★"],
+    heal:   ["255,90,120", "♥"], levelup: ["255,236,120", "▲"], overdrive: ["120,255,255", "★"], blade: ["230,245,255", "⚔"], dual: ["255,180,90", "⚌"], starbomb: ["255,240,150", "✷"],
   };
-  const BUFF_NAME = { shield: "Shield", frenzy: "Frenzy", power: "Power", bounce: "Bounce", freeze: "Freeze", heal: "Heal", levelup: "Level Up", overdrive: "Overdrive" };
+  const BUFF_NAME = { shield: "Shield", frenzy: "Frenzy", power: "Power", bounce: "Bounce", freeze: "Freeze", heal: "Heal", levelup: "Level Up", overdrive: "Overdrive", blade: "Blade", dual: "Dual wield", starbomb: "Star bomb" };
   function drawBuffPickup(cx, cy, t, kind, alpha) {
     const st = BUFF_STYLE[kind] || ["150,255,210", "✦"], c = st[0];
     const R = (STAR_R * 1.6 + 1 + Math.sin(t * 5) * 1.5) * dpr;
@@ -2182,12 +2232,13 @@
   let bgT = 0;
   function drawBiome() {
     bgT += 0.016; // own clock so the wash animates even on menus
-    patOffX += Math.cos(patternDir) * 0.5; patOffY += Math.sin(patternDir) * 0.5; // steady pattern drift
+    patOffX += Math.cos(patternDir) * 0.9; patOffY += Math.sin(patternDir) * 0.9; // steady pattern drift (a bit livelier)
     if (biomeFade < 1 && prevBiome) paintBiome(prevBiome, 1 - biomeFade);
     const f = biomeFade < 1 ? biomeFade : 1;
     paintBiome(biome, f);
     // patterns slowly breathe in and out on top of the wash
-    const pb = 0.5 + 0.4 * Math.sin(bgT * 0.09); // always present (0.1–0.9), no longer fully fading out
+    // slow deep breath — mostly present, but occasionally fades all the way out and back
+    const pb = Math.max(0, 0.35 + 0.78 * Math.sin(bgT * 0.055));
     if (biomeFade < 1 && prevBiome) paintPattern(prevPattern, (1 - biomeFade) * pb);
     paintPattern(pattern, f * pb);
   }
@@ -2239,6 +2290,8 @@
       if (buffs.power > elapsed) active.push(["POWER", "255,138,96"]);
       if (buffs.bounce > elapsed) active.push(["BOUNCE", "120,255,190"]);
       if (buffs.overdrive > elapsed) active.push(["OVERDRIVE", "120,255,255"]);
+      if (buffs.blade > elapsed) active.push(["BLADE", "230,245,255"]);
+      if (buffs.dual > elapsed) active.push(["DUAL " + (WEAPONS[dualWeapon] ? WEAPONS[dualWeapon].name.toUpperCase() : ""), "255,180,90"]);
       if (active.length) {
         ctx.font = `700 ${11 * uiScale}px "General Sans", system-ui, sans-serif`;
         const gap = ctx.measureText("   ").width;
@@ -2320,7 +2373,7 @@
     ctx.shadowBlur = 0;
     ctx.fillStyle = `hsla(${pauseHue},70%,80%,0.9)`;
     ctx.font = `500 ${15 * uiScale}px "General Sans", system-ui, sans-serif`;
-    ctx.fillText(MOBILE ? "tap to resume" : "press P / Space or tap to resume", w / 2, h * 0.46 + 36 * uiScale);
+    ctx.fillText(MOBILE ? "tap to resume" : "press P / Space or tap to resume" + " · H for help", w / 2, h * 0.46 + 36 * uiScale);
     ctx.restore();
   }
 
@@ -2367,15 +2420,17 @@
         });
         const killed = before - hunters.length;
         if (killed) { points += killed * KILL_VAL; showPts(); }
-        // the wave also destroys any boss it reaches → pops into a swarm + bonus
+        // bosses the front reaches: a Missile shock (s.dmg) chips once; a star blast pops them
         for (let bi = bosses.length - 1; bi >= 0; bi--) {
           const b = bosses[bi];
           const dx = b.x - s.x, dy = b.y - s.y;
           if (dx * dx + dy * dy <= r2) {
+            if (s.dmg) { if (s.hitB.has(b)) continue; s.hitB.add(b); b.hp -= s.dmg; if (b.hp > 0) continue; }
             popInto(b.x, b.y, b.color, 8);
             points += BOSS_VAL; showPts();
             shocks.push({ x: b.x, y: b.y, t: 0, max: 200 * dpr });
             bosses.splice(bi, 1);
+            if (mode === "arena" && bosses.length === 0) nextArenaBoss = elapsed + 8 + Math.random() * 5;
           }
         }
         if (mode === "classic" && bosses.length === 0) nextBoss = elapsed + 24 + Math.random() * 14;
@@ -2465,16 +2520,16 @@
         const solid = bl.rainbow ? `hsl(${hue},100%,65%)` : `rgba(${base},0.96)`;
         const faint = bl.rainbow ? `hsla(${hue},100%,65%,0.22)` : `rgba(${base},0.22)`;
         const s = Math.hypot(bl.vx, bl.vy) || 1, ux = bl.vx / s, uy = bl.vy / s, px = -uy, py = ux;
-        // motion trail — one faint elongated streak behind the head (cheap, no history buffer)
-        ctx.strokeStyle = faint; ctx.lineWidth = br * 1.5;
-        ctx.beginPath(); ctx.moveTo(bl.x, bl.y); ctx.lineTo(bl.x - ux * br * 5, bl.y - uy * br * 5); ctx.stroke();
+        // motion trail — grows from 0 as the bullet leaves (no full-length streak over the player)
+        const tlen = Math.min(br * 3, s * (bl.age || 0));
+        if (tlen > 1) { ctx.strokeStyle = faint; ctx.lineWidth = br * 1.1; ctx.beginPath(); ctx.moveTo(bl.x, bl.y); ctx.lineTo(bl.x - ux * tlen, bl.y - uy * tlen); ctx.stroke(); }
         ctx.strokeStyle = solid; ctx.fillStyle = solid;
         const k = bl.kind;
         if (k === "homing") {                       // round seeker orb + short tail
           ctx.lineWidth = br * 0.6; ctx.beginPath(); ctx.moveTo(bl.x, bl.y); ctx.lineTo(bl.x - ux * br * 2.6, bl.y - uy * br * 2.6); ctx.stroke();
           ctx.beginPath(); ctx.arc(bl.x, bl.y, br * 0.95, 0, 6.283185); ctx.fill();
-        } else if (k === "spread") {                 // small round pellet
-          ctx.beginPath(); ctx.arc(bl.x, bl.y, br * 0.95, 0, 6.283185); ctx.fill();
+        } else if (k === "spread") {                 // short pellet streak (not a blob)
+          ctx.lineWidth = br * 0.9; ctx.beginPath(); ctx.moveTo(bl.x + ux * br * 0.6, bl.y + uy * br * 0.6); ctx.lineTo(bl.x - ux * br * 1.3, bl.y - uy * br * 1.3); ctx.stroke();
         } else if (k === "ricochet") {               // spinning diamond
           ctx.beginPath();
           ctx.moveTo(bl.x + ux * br * 1.4, bl.y + uy * br * 1.4);
@@ -2515,6 +2570,18 @@
         ctx.beginPath(); ctx.arc(ar.x, ar.y, rad, ar.ang - ar.half, ar.ang + ar.half); ctx.stroke();
         ctx.globalAlpha = 1;
       }
+      ctx.restore(); ctx.shadowBlur = 0;
+    }
+
+    // Blade buff — glowing spinning blade + a trailing sweep arc
+    if (mode === "arena" && buffs.blade > elapsed && playerAlpha > 0.3) {
+      const blLen = 124 * dpr * arenaScale, ca = Math.cos(bladeAng), sa = Math.sin(bladeAng);
+      ctx.save(); ctx.lineCap = "round";
+      ctx.strokeStyle = "rgba(230,245,255,0.16)"; ctx.lineWidth = 11 * dpr;
+      ctx.beginPath(); ctx.arc(player.x, player.y, blLen * 0.9, bladeAng - 1.3, bladeAng); ctx.stroke();
+      ctx.strokeStyle = "rgba(238,249,255,0.96)"; ctx.lineWidth = 4 * dpr;
+      ctx.shadowColor = "rgba(200,235,255,0.9)"; ctx.shadowBlur = 10 * dpr;
+      ctx.beginPath(); ctx.moveTo(player.x, player.y); ctx.lineTo(player.x + ca * blLen, player.y + sa * blLen); ctx.stroke();
       ctx.restore(); ctx.shadowBlur = 0;
     }
 
@@ -2689,12 +2756,18 @@
   // how-to-play overlay — opens over whichever menu is showing, returns to it
   const helpPanel = document.getElementById("help");
   let helpReturn = startPanel;
+  const helpClassicEl = document.getElementById("help-classic"), helpArenaEl = document.getElementById("help-arena");
   function openHelp() {
     if (!helpPanel.hidden) return;
-    helpReturn = !overPanel.hidden ? overPanel : startPanel;
-    helpReturn.hidden = true; helpPanel.hidden = false;
+    // show only the current mode's section (null return = opened over a paused run)
+    const arena = mode === "arena";
+    helpClassicEl.style.display = arena ? "none" : "";
+    helpArenaEl.style.display = arena ? "" : "none";
+    helpReturn = !overPanel.hidden ? overPanel : !arenaStartPanel.hidden ? arenaStartPanel : !plotPanel.hidden ? plotPanel : startPanel.hidden ? null : startPanel;
+    if (helpReturn) helpReturn.hidden = true;
+    helpPanel.hidden = false;
   }
-  function closeHelp() { helpPanel.hidden = true; helpReturn.hidden = false; }
+  function closeHelp() { helpPanel.hidden = true; if (helpReturn) helpReturn.hidden = false; }
 
   // pick a mode from the start menu → straight into play, or a plot card for Journey
   function chooseMode(m) {
@@ -2786,16 +2859,17 @@
   document.getElementById("menu-btn").addEventListener("click", backToMenu);
   document.getElementById("help-btn").addEventListener("click", openHelp);
   document.getElementById("help-btn-over").addEventListener("click", openHelp);
+  document.getElementById("help-btn-arena").addEventListener("click", openHelp);
   document.getElementById("help-back").addEventListener("click", closeHelp);
   submitScoreBtn.addEventListener("click", submitScore);
   initialsEl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.stopPropagation(); submitScore(); } });
   addEventListener("keydown", (e) => {
     if (document.activeElement === initialsEl) return; // typing initials → ignore game keys
     if (!helpPanel.hidden) { if (e.key === "Escape" || e.key === "h" || e.key === "H" || e.key === "?") closeHelp(); return; }
-    if (!arenaStartPanel.hidden) { if (e.key === "Escape") backToMenu(); return; }
+    if (!arenaStartPanel.hidden) { if (e.key === "Escape") backToMenu(); else if (e.key === "h" || e.key === "H" || e.key === "?") openHelp(); return; }
     if (!plotPanel.hidden) { if (e.key === "Enter" || e.key === " ") start(); else if (e.key === "Escape") backToMenu(); return; }
     if (!winPanel.hidden) { if (e.key === "Enter" || e.key === "Escape") backToMenu(); return; }
-    if ((e.key === "h" || e.key === "H" || e.key === "?") && !running) { openHelp(); return; }
+    if ((e.key === "h" || e.key === "H" || e.key === "?") && (!running || paused)) { openHelp(); return; } // menus + pause
     if ((e.key === "p" || e.key === "P" || e.key === " ") && running) { e.preventDefault(); togglePause(); return; }
     if (e.key === "Escape") { if (paused) togglePause(); else if (!overPanel.hidden) backToMenu(); else window.location.href = "/"; }
     if ((e.key === "r" || e.key === "R") && dead) start();

@@ -159,6 +159,12 @@
     .lb__status { font-size: 0.78rem; color: var(--muted); }
     /* how-to-play panel */
     .help { max-width: 420px; margin: 14px auto 0; text-align: left; background: rgba(8,7,13,0.72); padding: 18px 22px; border-radius: 14px; border: 1px solid var(--line); }
+    .help-sec {
+      font-family: var(--font-display); font-size: 1.15rem; color: var(--accent);
+      letter-spacing: 0.06em; margin: 22px 0 10px; padding-top: 16px;
+      border-top: 1px solid var(--line); text-align: center;
+    }
+    .help-sec:first-child { border-top: none; padding-top: 0; margin-top: 4px; }
     .help h2 {
       font-family: var(--font-display); font-weight: 600; font-size: 0.78rem;
       letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
@@ -170,6 +176,11 @@
     .help .dot { width: 0.85em; height: 0.85em; margin-top: 0.28em; border-radius: 999px; flex: none; box-shadow: 0 0 9px currentColor; background: currentColor; }
     .help .ic { width: 1.2em; flex: none; text-align: center; color: var(--text); }
     .help .note { font-size: 0.82rem; opacity: 0.8; margin-top: 10px; }
+    .help-tbl { width: 100%; border-collapse: collapse; margin: 4px 0 2px; font-size: 0.86rem; }
+    .help-tbl td { padding: 5px 8px; vertical-align: top; border-bottom: 1px solid var(--line); color: var(--muted); line-height: 1.35; }
+    .help-tbl tr:last-child td { border-bottom: none; }
+    .help-tbl .i { width: 1.5em; text-align: center; font-weight: 700; color: var(--text); }
+    .help-tbl b { color: var(--text); font-weight: 600; white-space: nowrap; }
     .home {
       position: fixed; left: 22px; bottom: 18px; z-index: 5; /* above panels */
       display: inline-flex; align-items: center; gap: 4px;
@@ -260,6 +271,7 @@
         <button class="btn mode-btn" data-weapon="wave"><b>Wave</b><span>Crescent shockwaves from you. Extra waves at higher levels.</span></button>
       </div>
       <button class="btn btn--sm btn--ghost" id="arena-back">Back</button>
+      <button class="btn btn--sm btn--ghost" id="help-btn-arena" style="margin-left:10px">How to play</button>
     </div>
   </div>
 
@@ -315,9 +327,11 @@
   <div class="panel" id="help" hidden>
     <div class="panel__card">
       <h1 style="font-size:clamp(2rem,8vw,3.2rem)">HOW TO PLAY</h1>
-      <p class="big">You are the bright node. Move with the mouse or a finger-drag. The hunter-nodes home in on you — touching one, or the glowing <b>web</b> strung between two nearby nodes, gets you caught.</p>
 
       <div class="help">
+        <div id="help-classic">
+        <h2 class="help-sec">Classic · Waves · Journey</h2>
+        <p class="note">You are the bright node. Move with the <b>mouse</b> or a <b>finger-drag</b>. Hunter-nodes home in — touching one, or the glowing <b>web</b> between two nearby nodes, gets you caught.</p>
         <h2>Node personalities</h2>
         <ul>
           <li><span class="dot" style="color:rgb(199,116,232)"></span><span><b>Purple — Chaser.</b> Straight, aggressive pursuit.</span></li>
@@ -340,14 +354,49 @@
           <li><span class="ic">◉</span><span><b>Boss</b> — the big spiked eye. It takes on the personality of its colour. Catch it in a star-blast to pop it into a swarm of its own colour (+50).</span></li>
         </ul>
 
-        <h2>Bullet Hell <span class="note" style="font-weight:400">(desktop)</span></h2>
-        <ul>
-          <li><span class="ic">⌨</span><span><b>Move</b> with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>. <b>Aim</b> with the mouse — it autofires; <b>hold click</b> to hold fire.</span></li>
-          <li><span class="ic">»</span><span><b>Weapon drops</b> — Spread, Rapid, Seeker, Ricochet, Missile, Wave. Grab the <b>same kind again</b> to level it up (bigger bullets, more pellets/seekers, bigger blasts, higher damage &amp; fire rate). Each kind keeps its own level.</span></li>
-          <li><span class="ic">✦</span><span><b>Buffs</b> — Shield, Frenzy (fire rate), Power (pierce + size), Bounce (ricochet off walls), Freeze, ♥ Heal (restore a life), ▲ Level Up (bump your current weapon a level), and ★ Overdrive (temporary +10 levels). You also have a shield that recharges every 4s.</span></li>
-          <li><span class="ic">◉</span><span><b>Bosses</b> come in five types — Spiral, Burst, Charger, Splitter, Weaver — picked at random, each with a circular health ring and a glow that tells when they're about to fire or charge.</span></li>
-        </ul>
-        <p class="note">Pickups fade out if you leave them too long. Score is survival time + points.</p>
+        </div>
+        <div id="help-arena">
+        <h2 class="help-sec">Bullet Hell <span class="note" style="font-weight:400">(desktop only)</span></h2>
+        <p class="note">A twin-stick survival arena — totally different from the modes above. <b>Move</b> with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>, <b>aim</b> with the mouse. You autofire at your aim — <b>hold the mouse</b> to cease fire. You have <b>5 lives</b> (♥) plus a shield that recharges every 4s.</p>
+
+        <h2>Weapons</h2>
+        <table class="help-tbl">
+          <tr><td class="i" style="color:rgb(170,255,215)">↑</td><td><b>Dart</b></td><td>Fast single shot, high damage. Best vs bosses.</td></tr>
+          <tr><td class="i" style="color:rgb(255,200,90)">≪</td><td><b>Spread</b></td><td>Shotgun fan — more pellets &amp; wider each level.</td></tr>
+          <tr><td class="i" style="color:rgb(150,255,210)">»</td><td><b>Rapid</b></td><td>Bullet hose. Low damage, huge fire rate.</td></tr>
+          <tr><td class="i" style="color:rgb(120,196,255)">◎</td><td><b>Seeker</b></td><td>Homing shots that curve to the nearest target.</td></tr>
+          <tr><td class="i" style="color:rgb(120,255,190)">⇆</td><td><b>Ricochet</b></td><td>Bounces off walls &amp; bosses — hits from odd angles.</td></tr>
+          <tr><td class="i" style="color:rgb(255,140,60)">➤</td><td><b>Missile</b></td><td>Lobs that explode in a blast wave. Counters clumps.</td></tr>
+          <tr><td class="i" style="color:rgb(199,116,232)">≈</td><td><b>Wave</b></td><td>Crescent shockwaves from you. Extra waves at higher levels.</td></tr>
+        </table>
+        <p class="note">Grab the <b>same weapon again</b> to level it up — each kind keeps its own level. At <b>Lv10</b> its shots turn rainbow. A tougher weapon also makes the swarm tougher.</p>
+
+        <h2>Buffs &amp; pickups</h2>
+        <table class="help-tbl">
+          <tr><td class="i" style="color:rgb(150,225,255)">⬡</td><td><b>Shield</b></td><td>Soaks one hit, shoves the swarm.</td></tr>
+          <tr><td class="i" style="color:rgb(255,106,213)">✸</td><td><b>Frenzy</b></td><td>Big fire-rate boost.</td></tr>
+          <tr><td class="i" style="color:rgb(255,138,96)">✦</td><td><b>Power</b></td><td>Bigger bullets, +pierce, +damage.</td></tr>
+          <tr><td class="i" style="color:rgb(120,255,190)">⟲</td><td><b>Bounce</b></td><td>Bullets ricochet off walls.</td></tr>
+          <tr><td class="i" style="color:rgb(190,240,255)">❄</td><td><b>Freeze</b></td><td>Freezes every node for a few seconds.</td></tr>
+          <tr><td class="i" style="color:rgb(255,90,120)">♥</td><td><b>Heal</b></td><td>Restores a life.</td></tr>
+          <tr><td class="i" style="color:rgb(255,236,120)">▲</td><td><b>Level Up</b></td><td>Bumps your current weapon a level.</td></tr>
+          <tr><td class="i" style="color:rgb(120,255,255)">★</td><td><b>Overdrive</b></td><td>Temporary +10 weapon levels (rainbow).</td></tr>
+          <tr><td class="i" style="color:rgb(230,245,255)">⚔</td><td><b>Blade</b></td><td>Mouse-aimed melee blade that slices around you.</td></tr>
+          <tr><td class="i" style="color:rgb(255,180,90)">⚌</td><td><b>Dual-wield</b></td><td>Fires a 2nd weapon alongside yours for a while.</td></tr>
+          <tr><td class="i" style="color:rgb(255,240,150)">✷</td><td><b>Star Bomb</b></td><td>Instant screen-clearing blast.</td></tr>
+        </table>
+        <p class="note">Pickups fade out if you leave them too long.</p>
+
+        <h2>Bosses</h2>
+        <table class="help-tbl">
+          <tr><td class="i">✦</td><td><b>Spiral</b></td><td>Pinwheel — sprays a rotating stream of shots.</td></tr>
+          <tr><td class="i">✺</td><td><b>Burst</b></td><td>Radiating rays — periodic rings of shots.</td></tr>
+          <tr><td class="i">➤</td><td><b>Charger</b></td><td>Winds up (telegraphed), then dashes at you.</td></tr>
+          <tr><td class="i">◷</td><td><b>Splitter</b></td><td>Bursts into a big swarm when destroyed.</td></tr>
+          <tr><td class="i">⬡</td><td><b>Weaver</b></td><td>Web lattice — fires an aimed fan.</td></tr>
+        </table>
+        <p class="note">Each boss has a circular health ring and glows just before it fires or charges — a voice + screen-edge flash warns before one arrives. Score is survival time + points.</p>
+        </div>
 
         <h2 class="kbd-hint">Keys</h2>
         <p class="note kbd-hint"><kbd>M</kbd> mute &middot; <kbd>R</kbd> retry &middot; <kbd>Esc</kbd> back to site</p>
