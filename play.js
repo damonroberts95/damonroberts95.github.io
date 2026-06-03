@@ -35,6 +35,7 @@
   const plotNameEl = document.getElementById("plot-name");
   const plotTextEl = document.getElementById("plot-text");
   const winPanel = document.getElementById("win");
+  const arenaStartPanel = document.getElementById("arena-start");
 
   // Leaderboard via Supabase (free, HTTPS, no server). Paste your project URL
   // + anon (public) key below. The anon key is meant to be public; a row-level
@@ -132,8 +133,21 @@
     let prof = PROFILES.default;
 
     const frozenNow = () => elapsed < frozenUntil;
-    // crawls during freeze, very slow on menu/loss, eases up while playing
-    const curBPM = () => (frozenNow() ? 28 : running ? Math.min(132, 84 + elapsed * 0.6) * prof.bpmMul : 40);
+    // crawls during freeze, very slow on menu/loss, eases up while playing.
+    // Arena (Bullet Hell) runs a faster, fixed-ish club tempo (Wipeout-style techno).
+    const curBPM = () => (frozenNow() ? 28 : !running ? 40
+      : mode === "arena" ? Math.min(140, 126 + elapsed * 0.12)
+      : Math.min(132, 84 + elapsed * 0.6) * prof.bpmMul);
+
+    // Wipeout-flavoured arena pattern data: driving minor changes + a rolling 16th
+    // acid bassline (semitone offsets from the chord root; -1 = rest).
+    const ARENA_CH = [
+      { root: 45, ivs: [0, 3, 7, 10] }, // Am7
+      { root: 50, ivs: [0, 3, 7, 10] }, // Dm7
+      { root: 53, ivs: [0, 4, 7, 10] }, // F7
+      { root: 52, ivs: [0, 4, 7, 11] }, // E (tension → pulls back to Am)
+    ];
+    const ARENA_BASS = [0, -1, 0, 12, -1, 0, 7, -1, 0, -1, 0, 3, -1, 7, 0, 12];
 
     function impulse(dur, decay) {
       const len = Math.floor(ctx.sampleRate * dur);
@@ -148,8 +162,8 @@
       mlp = ctx.createBiquadFilter(); mlp.type = "lowpass"; mlp.frequency.value = 8500; mlp.connect(master); // warm, less harsh
       verb = ctx.createConvolver(); verb.buffer = impulse(3.2, 2.4);
       vg = ctx.createGain(); vg.gain.value = 1.0; verb.connect(vg); vg.connect(mlp);
-      music = ctx.createGain(); music.gain.value = 0.17; music.connect(mlp); music.connect(verb);
-      fx = ctx.createGain(); fx.gain.value = 0.5; fx.connect(mlp); fx.connect(verb);
+      music = ctx.createGain(); music.gain.value = 0.34; music.connect(mlp); music.connect(verb);
+      fx = ctx.createGain(); fx.gain.value = 0.34; fx.connect(mlp); fx.connect(verb);
       const len = Math.floor(ctx.sampleRate * 0.5);
       noise = ctx.createBuffer(1, len, ctx.sampleRate);
       const d = noise.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
@@ -199,7 +213,38 @@
       s.onended = () => { try { s.disconnect(); g.disconnect(); if (f) f.disconnect(); } catch {} };
     }
 
+    // Wipeout-style driving techno for arena: punchy 4-on-the-floor, backbeat clap,
+    // rolling 16th acid bass, offbeat hats, syncopated saw stabs + a bar pad.
+    function scheduleArena(s, t) {
+      // blend: Wipeout rhythm section (kick/clap/acid bass/hats) + the current BIOME's
+      // harmony & lead timbre, so the music tracks whatever biome the background is in.
+      const set = prof.chords, TR = (prof.transpose || 0) + 7; // biome chords, lifted a fifth
+      const c = set[Math.floor(s / 16) % set.length], b = s % 16;
+      const pitch = frozenNow() ? 0.5 : 1;
+      if (b % 4 === 0) { // kick
+        const k = ctx.createOscillator(), g = ctx.createGain();
+        k.type = "sine"; k.frequency.setValueAtTime(124 * pitch, t); k.frequency.exponentialRampToValueAtTime(46 * pitch, t + 0.1);
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.42, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
+        k.connect(g); g.connect(music); k.start(t); k.stop(t + 0.28);
+        k.onended = () => { try { k.disconnect(); g.disconnect(); } catch {} };
+      }
+      if (b === 4 || b === 12) noiseHit(t, 0.16, 0.16, fx, 1700); // backbeat clap
+      const bp = ARENA_BASS[b]; // rolling 16th acid bass (off the biome chord root)
+      if (bp >= 0) {
+        const acc = b % 4 === 0 ? 1 : 0.62;
+        synth(mtof(c.root + bp - 12 + TR) * pitch, t, 0.14, { type: "sawtooth", gain: 0.17 * acc, detune: 7, voices: 2, cut: 560 + (b % 4 === 0 ? 1000 : 320), q: 10, attack: 0.004 });
+      }
+      noiseHit(t, b % 2 ? 0.05 : 0.02, b % 2 ? 0.02 : 0.011, music, 9200); // hats (open offbeat)
+      if (b === 2 || b === 6 || b === 10 || b === 11 || b === 14) { // syncopated stab — biome lead timbre
+        const note = c.root + c.ivs[ARP[b] % c.ivs.length] + 12 + TR;
+        synth(mtof(note) * pitch, t, 0.4, { type: prof.leadType, gain: 0.06, detune: 13, voices: 3, cut: prof.leadCut, q: 5, attack: 0.01 });
+      }
+      if (b === 0) c.ivs.forEach((iv) => synth(mtof(c.root + iv + TR) * pitch, t, 2.2, { gain: 0.035, detune: 20, voices: 3, cut: 1400, q: 1.2, attack: 0.6 })); // pad
+      if ((prof.sparkle || b % 4 === 2) && b % 2 === 0) { const n = c.root + c.ivs[ARP[b] % c.ivs.length] + 24 + TR; synth(mtof(n) * pitch, t, 0.16, { type: "square", gain: 0.03, detune: 4, voices: 1, cut: Math.max(6200, prof.leadCut), q: 2, attack: 0.005 }); } // shimmer (more in sparkly biomes)
+    }
+
     function scheduleStep(s, t) {
+      if (mode === "arena") return scheduleArena(s, t);
       const set = prof.chords, tr = prof.transpose;
       const c = set[Math.floor(s / 16) % set.length], b = s % 16;
       const pitch = frozenNow() ? 0.5 : 1; // drop an octave while frozen (deep + woozy)
@@ -348,6 +393,7 @@
   function movePointer(e) {
     const t = e.touches ? e.touches[0] : e;
     if (!t) return;
+    if (mode === "arena") { aimX = t.clientX * dpr; aimY = t.clientY * dpr; return; } // arena: mouse aims, WASD moves
     const isTouch = !!e.touches || e.pointerType === "touch";
     if (isTouch && anchor) {
       // relative: move the player by the finger's delta from where the drag started
@@ -362,6 +408,25 @@
   addEventListener("touchstart", startTouch, { passive: true });
   addEventListener("pointermove", movePointer, { passive: true });
   addEventListener("touchmove", movePointer, { passive: true });
+
+  // arena (Bullet Hell): WASD steering + hold-to-fire. Only active while mode === "arena".
+  const arenaKeyMap = { w: "w", a: "a", s: "s", d: "d", arrowup: "w", arrowleft: "a", arrowdown: "s", arrowright: "d" };
+  addEventListener("keydown", (e) => {
+    if (mode !== "arena" || !running) return;
+    const k = arenaKeyMap[e.key.toLowerCase()];
+    if (k) { arenaKeys[k] = true; e.preventDefault(); }
+  });
+  addEventListener("keyup", (e) => {
+    const k = arenaKeyMap[e.key.toLowerCase()];
+    if (k) arenaKeys[k] = false;
+  });
+  // autofire always; holding the mouse is a temporary ceasefire (hold = hold fire)
+  addEventListener("mousedown", (e) => {
+    if (mode !== "arena" || !running || paused) return;
+    if (e.target && e.target.closest && e.target.closest("button, a, .mute")) return;
+    if (e.button === 0) { fireHold = true; aimX = e.clientX * dpr; aimY = e.clientY * dpr; }
+  });
+  addEventListener("mouseup", (e) => { if (e.button === 0) fireHold = false; });
 
   let hunters = [];
   let hunterId = 0;           // stable per-node id, for tracking link ages
@@ -391,6 +456,7 @@
   let shooter = null, nextShooter = 0; // {x,y,t} collectable — temp auto-fire weapon
   let shootUntil = 0, nextBullet = 0;  // armed window + dart cadence
   let bullets = [];                    // {x,y,vx,vy,life} darts fired along travel
+  let arcs = [];                       // arena Wave weapon: expanding crescents from the player
   const heading = { x: 1, y: 0 };      // last significant travel direction
   const SHOOT_DUR = 6, BULLET_GAP = 0.1;
   let slowmo = null, nextSlow = 0, speedSetback = 0; // rare powerup: rolls the SPEED ramp back a few seconds (cap unaffected)
@@ -398,15 +464,74 @@
   let bosses = [], nextBoss = 0;   // big slow hunters (usually 1; Confluence fields several)
   let enemyBullets = [];           // shots a "shooter" boss fires at the player
 
+  // ---- arena (Bullet Hell, desktop only): WASD move + mouse aim, weapon types, buffs ----
+  const arenaKeys = { w: false, a: false, s: false, d: false };
+  let aimX = 0, aimY = 0;              // mouse aim target (canvas px)
+  let fireHold = false;               // mouse held → temporary ceasefire (autofire is on by default)
+  let weapon = "dart", weaponLvl = 1; // current weapon kind + its level (mirror of weaponLvls[weapon])
+  let weaponLvls = { dart: 1 };       // per-kind levels persist across switches within a run
+  let startWeapon = "dart";           // chosen on the Bullet Hell weapon-select screen
+  let nextWeaponDrop = 0, nextBuffDrop = 0;
+  let weaponPickup = null, buffPickup = null; // {x, y, t, kind, born} — despawn after PICKUP_TTL
+  const buffs = { frenzy: 0, power: 0, bounce: 0, overdrive: 0 }; // each holds the elapsed time it expires at
+  let nextArenaBoss = 0, arenaBossIdx = 0; // boss spawn cadence + which archetype is next
+  let bossSpawnAt = 0, flashFrom = 0, flashUntil = 0, flashCol = "255,40,60", lowHpFrom = 1e9; // warning/flash timing
+  let playerHp = 1, playerMaxHp = 1;  // arena: multiple hits before death (other modes stay one-hit)
+  let regenShield = true, regenReadyAt = 0; // arena: passive shield that soaks a hit, recharges over 2s
+  const PICKUP_TTL = 9;               // seconds an uncollected weapon/buff pickup lingers before fading
+  const WEAPON_MAXLVL = 10;
+  // base weapon stats; leveling scales these (see weaponStats) — fire gap, projectile
+  // speed, bullet radius, pellet count, fan spread (rad), pierce count, damage.
+  const WEAPONS = {
+    dart:   { name: "Dart",   gap: 0.15, spd: 820, r: 5,  count: 1, spread: 0,    pierce: 0, dmg: 3.2, homing: false },
+    spread: { name: "Spread", gap: 0.30, spd: 700, r: 5,  count: 3, spread: 0.30, pierce: 0, dmg: 1.6, homing: false },
+    rapid:  { name: "Rapid",  gap: 0.085, spd: 900, r: 4,  count: 1, spread: 0.10, pierce: 0, dmg: 1.0, homing: false },
+    homing: { name: "Seeker", gap: 0.30, spd: 560, r: 6,  count: 1, spread: 0,    pierce: 0, dmg: 1.9, homing: true },
+    ricochet:{ name: "Ricochet", gap: 0.17, spd: 780, r: 5, count: 1, spread: 0,  pierce: 1, dmg: 2.2, homing: false, bounce: true },
+    mortar: { name: "Missile", gap: 0.5,  spd: 540, r: 7, count: 1, spread: 0,    pierce: 0, dmg: 3, homing: false, explode: true },
+    wave:   { name: "Wave",   gap: 0.46, spd: 470, r: 6, count: 1, spread: 0,    pierce: 8, dmg: 3, homing: false },
+  };
+  const WEAPON_KINDS = ["spread", "rapid", "homing", "ricochet", "mortar", "wave"]; // droppable (dart is the starting weapon)
+  const BUFF_KINDS = ["shield", "frenzy", "power", "bounce", "freeze", "heal", "levelup", "overdrive"];
+  const ARENA_BOSSES = ["spiral", "burst", "charger", "splitter", "weaver"];
+
+  // effective weapon stats for the current kind + level. Each level: bigger bullets,
+  // faster cadence, +10% damage; plus a kind-specific bump (spread → more/wider pellets,
+  // wave → an extra simultaneous wave every 3 levels, lance → +1 pierce, dart/rapid → extra stream).
+  function weaponStats(lvlOverride) {
+    const b = WEAPONS[weapon], lvl = lvlOverride || weaponLvl;
+    const s = {
+      name: b.name,
+      gap: Math.max(0.04, b.gap * Math.pow(0.89, lvl - 1)),
+      spd: b.spd * (1 + 0.06 * (lvl - 1)),
+      r:   b.r * (1 + 0.10 * (lvl - 1)),     // bigger bullets every level
+      count: b.count,
+      spread: b.spread,
+      pierce: b.pierce,
+      dmg: b.dmg * (1 + 0.16 * (lvl - 1)),   // +16% damage per level
+      waves: 1,
+    };
+    if (weapon === "spread") { s.count = Math.min(13, b.count + (lvl - 1)); s.spread = b.spread + 0.05 * (lvl - 1); } // more pellets, wider fan
+    else if (weapon === "wave") s.waves = 1 + Math.floor((lvl - 1) / 3);    // +1 simultaneous wave every 3 levels
+    else if (weapon === "rapid") s.count = lvl >= 4 ? 2 : 1;                // twin stream at high level
+    else if (weapon === "homing") s.count = lvl >= 6 ? 2 : 1; // at most two seekers (kept cheap + not OP)
+    else if (weapon === "ricochet") { s.count = lvl >= 4 ? 2 : 1; s.pierce = b.pierce + Math.floor((lvl - 1) / 2); } // more ricochets + punches through
+    else if (weapon === "dart") s.count = lvl >= 6 ? 3 : lvl >= 3 ? 2 : 1;  // double / triple dart
+    return s;
+  }
+
   // ---- modes: classic (endless), waves (themed waves), journey (story levels) ----
   // `mode` is declared near the top (needed during initial loadBest()).
   let wave = 0, waveEndsAt = 0, waveType = "themed"; // waves mode
   let themeColor = null;            // dominant spawn colour this wave/level (null = all)
   let bossWave = false;             // current wave/level features the boss
   let journeyIdx = 0, levelEndsAt = 0; // journey mode
+  let journeyTime = 0, journeyPts = 0; // journey: time + points banked from cleared levels (score persists across levels)
   let frozenAccum = 0, waveRampStart = 0; // seconds spent frozen (excluded from the speed ramp)
   let biomeFade = 1, prevBiome = null, biomeFadeRate = 1.6; // crossfade between biomes (0→1)
   let pattern = null, prevPattern = null; // subtle background pattern, varies per biome
+  let patternDir = 0;                     // random drift direction for the pattern (radians)
+  let patOffX = 0, patOffY = 0;           // continuously accumulated pattern offset (no teleport on dir change)
   let nextBiomeAt = 0;              // classic: time of the next slow biome shift
   const PATTERN_KEYS = ["none", "grid", "dots", "rings", "diag", "weave", "cross", "wave", "hex"];
   let banner = null;                // {big, sub, until} transient on-canvas wave/level title
@@ -448,14 +573,14 @@
   const JOURNEY = [
     { name: "Awakening",  color: "199,116,232", len: 35, boss: false, biome: "dusk",
       plot: "You wake as a stray node in the Lattice — a living grid of data. The Chasers turn toward you. Run." },
-    { name: "The Ambush", color: "255,106,213", len: 36, boss: false, biome: "rose",
-      plot: "Word spreads through the mesh. The Ambushers learn your habits, cutting ahead of every move you make." },
-    { name: "Static",     color: "34,211,238",  len: 38, boss: false, biome: "ice",
-      plot: "Deeper in, the signal frays. Erratics spiral around you, never quite where you expect." },
     { name: "The Timid",  color: "255,138,96",  len: 38, boss: false, biome: "toxic",
       plot: "The Shy ones swarm and flinch — bold from afar, panicked up close. Use their fear." },
     { name: "Drift",      color: "120,196,255", len: 40, boss: false, biome: "void",
       plot: "Out in the open field the Scatterers roam, barely chasing. Calm — but the webs between them still bite." },
+    { name: "The Ambush", color: "255,106,213", len: 36, boss: false, biome: "rose",
+      plot: "Word spreads through the mesh. The Ambushers learn your habits, cutting ahead of every move you make." },
+    { name: "Static",     color: "34,211,238",  len: 38, boss: false, biome: "ice",
+      plot: "Deeper in, the signal frays. Erratics spiral around you, never quite where you expect." },
     { name: "The Hive",   color: "255,248,120", len: 40, boss: false, biome: "ember",
       plot: "The Hive packs tight and grows as one. Whole clusters drift together. Thread the gaps." },
     { name: "The Warden", color: "199,116,232", len: 42, boss: true, biome: "void",
@@ -469,16 +594,17 @@
   // spawn a hunter just off a random edge, drifting inward
   function spawnHunter() {
     const edge = (Math.random() * 4) | 0;
+    const m = (mode === "arena" ? 60 : 20) * dpr; // arena nodes are big → start well off-screen
     let x, y;
-    if (edge === 0) { x = rand(0, w); y = -20 * dpr; }
-    else if (edge === 1) { x = w + 20 * dpr; y = rand(0, h); }
-    else if (edge === 2) { x = rand(0, w); y = h + 20 * dpr; }
-    else { x = -20 * dpr; y = rand(0, h); }
+    if (edge === 0) { x = rand(0, w); y = -m; }
+    else if (edge === 1) { x = w + m; y = rand(0, h); }
+    else if (edge === 2) { x = rand(0, w); y = h + m; }
+    else { x = -m; y = rand(0, h); }
     // themed waves/levels bias most spawns to the theme colour for a clear identity
     const color = (themeColor && Math.random() < 0.72)
       ? themeColor
       : PALETTE[(Math.random() * PALETTE.length) | 0];
-    const r0 = rand(2.6, 4.4) * dpr;
+    const r0 = rand(2.6, 4.4) * dpr * (mode === "arena" ? 1.85 : 1); // arena: chunkier nodes (easier to hit)
     hunters.push({
       id: hunterId++,
       x, y, vx: 0, vy: 0,
@@ -490,6 +616,36 @@
       age: 0,
       life: rand(35, 60), // seconds before a lone node gives up and flies off
     });
+  }
+
+  // HUD points — journey shows the running total (banked + current level), so it persists across levels
+  const showPts = () => { ptsEl.textContent = String(points + (mode === "journey" ? journeyPts : 0)); };
+
+  // Mortar explosion — AoE that kills nodes (marked dead) + chips bosses in radius. Returns
+  // true if anything was killed, so the caller can trigger the dead-node sweep.
+  function explode(x, y, rad, dmg) {
+    shocks.push({ x, y, t: 0, max: rad * 2 }); audio.sfx("blast");
+    let killed = false;
+    const r2 = rad * rad;
+    for (let j = 0; j < hunters.length; j++) {
+      const hn = hunters[j]; if (hn.dead) continue;
+      const dx = hn.x - x, dy = hn.y - y;
+      if (dx * dx + dy * dy < r2) { hn.dead = true; points += KILL_VAL; killed = true; }
+    }
+    for (let bi = bosses.length - 1; bi >= 0; bi--) {
+      const b = bosses[bi]; if (!b.maxHp) continue;
+      const dx = b.x - x, dy = b.y - y, rr = rad + b.r;
+      if (dx * dx + dy * dy < rr * rr) {
+        b.hp -= dmg;
+        if (b.hp <= 0) {
+          popInto(b.x, b.y, b.color, b.kind === "splitter" ? 16 : 9);
+          points += BOSS_VAL; shocks.push({ x: b.x, y: b.y, t: 0, max: 240 * dpr, rainbow: true });
+          bosses.splice(bi, 1); if (mode === "arena" && bosses.length === 0) nextArenaBoss = elapsed + 8 + Math.random() * 5;
+        }
+      }
+    }
+    if (killed) showPts();
+    return killed;
   }
 
   function reset() {
@@ -506,45 +662,74 @@
     gems = [];
     nextGem = 2;
     points = 0;
-    ptsEl.textContent = "0";
+    showPts();
     trail = [];
     mult = 1; comboUntil = 0;
     shield = null; nextShield = 16 + Math.random() * 10;
     shieldActive = false; invulnUntil = 0;
     shooter = null; nextShooter = 18 + Math.random() * 10;
-    shootUntil = 0; nextBullet = 0; bullets = [];
+    shootUntil = 0; nextBullet = 0; bullets = []; arcs = [];
     slowmo = null; nextSlow = 40 + Math.random() * 30; speedSetback = 0;
     heading.x = 1; heading.y = 0;
     bosses = []; enemyBullets = []; nextBoss = 24 + Math.random() * 14;
     frozenAccum = 0; waveRampStart = 0; biomeFade = 1; prevBiome = null;
     audio.setShield(false);
-    player.x = w / 2; player.y = h / 2;
+    // arena state
+    weapon = mode === "arena" ? startWeapon : "dart"; weaponLvl = 1; weaponLvls = { [weapon]: 1 };
+    weaponPickup = null; buffPickup = null;
+    nextWeaponDrop = 3 + Math.random() * 2; nextBuffDrop = 2.5 + Math.random() * 2;
+    arenaKeys.w = arenaKeys.a = arenaKeys.s = arenaKeys.d = false; fireHold = false;
+    buffs.frenzy = buffs.power = buffs.bounce = buffs.overdrive = 0;
+    arenaBossIdx = 0; nextArenaBoss = 12 + Math.random() * 4; bossSpawnAt = 0; flashUntil = 0; lowHpFrom = 1e9;
+    playerMaxHp = mode === "arena" ? 5 : 1; playerHp = playerMaxHp;
+    regenShield = true; regenReadyAt = 0;
+    player.vx = 0; player.vy = 0;
+    player.x = w / 2; player.y = h / 2; player.px = player.x; player.py = player.y;
+    aimX = w / 2; aimY = h * 0.3;
     dead = false;
     // per-mode setup
     wave = 0; themeColor = null; bossWave = false; banner = null;
     biome = null; prevBiome = null; pattern = null; biomeFade = 1;
     if (mode === "waves") nextWave(0);
     else if (mode === "journey") setupJourneyLevel();
+    else if (mode === "arena") setupArena();
     else { pickBiome(true, true); scheduleBiomeShift(); } // classic → slow drifting biomes (fade in)
     for (let i = 0; i < 3; i++) spawnHunter();
   }
 
+  // arena: pick a biome and seed the field (endless survival, like classic but you shoot back)
+  function setupArena() {
+    pickBiome(true, false); scheduleBiomeShift();
+    banner = { big: "BULLET HELL", sub: "WASD to move · autofires at your aim", until: 3.2 };
+  }
+
   const BOSS_VAL = 50; // points for destroying the boss
-  function spawnBoss(forceColor, shooter) {
+  function spawnBoss(forceColor, shooter, kind, hp) {
     const edge = (Math.random() * 4) | 0;
+    const m = 90 * dpr; // clear the boss radius + spiked corona so it floats in from off-screen
     let x, y;
-    if (edge === 0) { x = rand(0, w); y = -30 * dpr; }
-    else if (edge === 1) { x = w + 30 * dpr; y = rand(0, h); }
-    else if (edge === 2) { x = rand(0, w); y = h + 30 * dpr; }
-    else { x = -30 * dpr; y = rand(0, h); }
+    if (edge === 0) { x = rand(0, w); y = -m; }
+    else if (edge === 1) { x = w + m; y = rand(0, h); }
+    else if (edge === 2) { x = rand(0, w); y = h + m; }
+    else { x = -m; y = rand(0, h); }
     const color = forceColor || PALETTE[(Math.random() * PALETTE.length) | 0];
-    bosses.push({ x, y, vx: 0, vy: 0, r: (shooter ? 26 : 22) * dpr, t: 0, color, p: PERSONA[color], seed: rand(0, 6.283185), shooter: !!shooter, fireCd: 1.6 });
+    bosses.push({ x, y, vx: 0, vy: 0, r: (kind ? 30 : shooter ? 26 : 22) * dpr, t: 0, color, p: PERSONA[color],
+      seed: rand(0, 6.283185), shooter: !!shooter, fireCd: 1.6,
+      kind: kind || null, hp: hp || 0, maxHp: hp || 0, spin: 0, chargeCd: 2.2, dashing: 0 });
+  }
+
+  // arena: rotate through boss archetypes; hp scales with how long you've survived
+  function spawnArenaBoss() {
+    const kind = ARENA_BOSSES[(Math.random() * ARENA_BOSSES.length) | 0]; // random archetype each spawn
+    const color = PALETTE[(Math.random() * PALETTE.length) | 0];
+    const hp = Math.round((10 + elapsed * 1.5) * (1 + (weaponLvl - 1) * 0.08)); // tougher as your weapon levels
+    spawnBoss(color, kind === "spiral" || kind === "burst" || kind === "weaver", kind, hp);
   }
 
   // burst a cluster of same-colour nodes outward from a point (boss death → its swarm)
   function popInto(x, y, color, count) {
     for (let k = 0; k < count; k++) {
-      const r0 = rand(2.6, 4.4) * dpr;
+      const r0 = rand(2.6, 4.4) * dpr * (mode === "arena" ? 1.85 : 1);
       const ang = rand(0, 6.283185), spd = rand(180, 420) * dpr;
       hunters.push({
         id: hunterId++,
@@ -571,6 +756,7 @@
     prevBiome = biome; prevPattern = pattern;
     biome = BIOMES[bkey];
     pattern = PATTERN_KEYS[(Math.random() * PATTERN_KEYS.length) | 0];
+    patternDir = Math.random() * 6.283185; // each biome drifts its pattern a different way
     biomeFade = fade ? 0 : 1;
     biomeFadeRate = slow ? 0.13 : 1.6; // classic: a long, gentle ~8s crossfade
     audio.setBiome(bkey);
@@ -630,6 +816,7 @@
     biome = BIOMES[L.biome] || null;
     prevBiome = null; biomeFade = 0; biomeFadeRate = 1.6; // always fade the biome in
     pattern = PATTERN_KEYS[(Math.random() * PATTERN_KEYS.length) | 0];
+    patternDir = Math.random() * 6.283185;
     audio.setBiome(L.biome);
     levelEndsAt = L.len;
     banner = { big: L.name, sub: themeColor ? PERSONA_NAME[themeColor] : "All colours", until: 2.4 };
@@ -648,6 +835,7 @@
   function levelComplete() {
     running = false;
     audio.sfx("shield"); // little fanfare
+    journeyTime += elapsed; journeyPts += points; // bank this level's score → carries to the next
     journeyIdx++;
     if (journeyIdx >= JOURNEY.length) {
       winPanel.hidden = false; document.body.classList.remove("playing");
@@ -679,6 +867,28 @@
       audio.sfx("freeze");
       return false;
     }
+    if (mode === "arena") {
+      if (regenShield) { // recharging shield soaks the hit — no life lost; recharges in 2s
+        regenShield = false; regenReadyAt = elapsed + 4;
+        invulnUntil = elapsed + 0.8;
+        shocks.push({ x: player.x, y: player.y, t: 0, max: 260 * dpr, shield: true });
+        for (const hn of hunters) { const dx = hn.x - player.x, dy = hn.y - player.y, d = Math.hypot(dx, dy) || 1; if (d < 360 * dpr) { const k = 1100 * dpr; hn.vx += (dx / d) * k; hn.vy += (dy / d) * k; } }
+        audio.sfx("freeze");
+        return false;
+      }
+      // arena: chip a life, brief i-frames + a shove so a swarm can't drain you instantly
+      playerHp--;
+      invulnUntil = elapsed + 1.2;
+      flashFrom = elapsed; flashUntil = Math.max(flashUntil, elapsed + 0.5); flashCol = "255,40,60"; // red edge flash on every hit
+      shocks.push({ x: player.x, y: player.y, t: 0, max: 340 * dpr });
+      for (const hn of hunters) { // hard shove — clear breathing room after a hit
+        const dx = hn.x - player.x, dy = hn.y - player.y, d = Math.hypot(dx, dy) || 1;
+        if (d < 440 * dpr) { const k = 1500 * dpr; hn.vx += (dx / d) * k; hn.vy += (dy / d) * k; }
+      }
+      audio.sfx("freeze");
+      if (playerHp === 1) { lowHpFrom = elapsed; say(["Critical", "Energy critical", "Warning, low energy"][(Math.random() * 3) | 0]); } // last life
+      return playerHp <= 0; // dead only when the last life is gone
+    }
     return true;
   }
 
@@ -699,6 +909,7 @@
     helpPanel.hidden = true;
     plotPanel.hidden = true;
     winPanel.hidden = true;
+    arenaStartPanel.hidden = true;
     document.body.classList.add("playing"); // hide cursor mid-run
     playerAlpha = 0; // fade the player in
     running = true; paused = false; celebrating = false; document.body.classList.remove("paused"); setPauseBtn();
@@ -710,18 +921,22 @@
     running = false;
     dead = true;
     audio.sfx("death");
+    if (mode === "arena") say(["Eliminated", "Game over", "Destroyed", "Signal lost", "System failure", "Connection terminated"][(Math.random() * 6) | 0]);
     document.body.classList.remove("playing"); // restore cursor on menu
-    const score = elapsed + points; // seconds + 10/gem, one decimal
-    finalEl.textContent = elapsed.toFixed(1);
-    finalPtsEl.textContent = points;
+    // journey: carry cleared-level time + points so the score is a whole-run total, not per-level
+    const totalTime = elapsed + (mode === "journey" ? journeyTime : 0);
+    const totalPts = points + (mode === "journey" ? journeyPts : 0);
+    const score = totalTime + totalPts; // seconds + 10/gem, one decimal
+    finalEl.textContent = totalTime.toFixed(1);
+    finalPtsEl.textContent = totalPts;
     finalScoreEl.textContent = score.toFixed(1);
     // leaderboard: record this run (per mode), show the board + submit box
-    lastRun = { score, time: elapsed, points };
+    lastRun = { score, time: totalTime, points: totalPts };
     lbStatusEl.textContent = "";
     submitScoreBtn.disabled = false;
     lbSubmitEl.hidden = false; // always show the button; it submits THIS run only
     document.getElementById("restart-btn").hidden = mode !== "journey"; // "Start over" only in journey
-    const modeName = mode === "waves" ? "Waves" : mode === "journey" ? "Journey" : "Classic";
+    const modeName = mode === "waves" ? "Waves" : mode === "journey" ? "Journey" : mode === "arena" ? "Bullet Hell" : "Classic";
     let reach = "";
     if (mode === "waves") reach = "Reached wave " + wave + " · ";
     else if (mode === "journey") reach = "Level " + (journeyIdx + 1) + " — " + JOURNEY[journeyIdx].name + " · ";
@@ -759,6 +974,21 @@
     playerAlpha = Math.min(1, playerAlpha + dt * 2.4); // fade-in
     if (playerAlpha > 0.05) { trail.push({ x: player.x, y: player.y }); if (trail.length > 24) trail.shift(); }
 
+    // arena: WASD steering with momentum — gentle accel + slow glide means you carry
+    // speed and bank through turns rather than stopping/redirecting on a dime.
+    if (mode === "arena") {
+      const maxV = 460 * dpr * arenaScale;
+      const acc = 2900 * dpr * arenaScale; // snappy — small bit of carry, no skating
+      let ix = (arenaKeys.d ? 1 : 0) - (arenaKeys.a ? 1 : 0);
+      let iy = (arenaKeys.s ? 1 : 0) - (arenaKeys.w ? 1 : 0);
+      if (ix || iy) { const il = Math.hypot(ix, iy); player.vx += (ix / il) * acc * dt; player.vy += (iy / il) * acc * dt; }
+      else { const f = Math.pow(0.001, dt); player.vx *= f; player.vy *= f; } // brisk stop, slight glide
+      const sv = Math.hypot(player.vx, player.vy);
+      if (sv > maxV) { player.vx = player.vx / sv * maxV; player.vy = player.vy / sv * maxV; }
+      player.x = clamp01(player.x + player.vx * dt, w);
+      player.y = clamp01(player.y + player.vy * dt, h);
+    }
+
     // player velocity from this frame's pointer movement (for ambush/predict)
     player.vx = (player.x - player.px) / (dt || 0.016);
     player.vy = (player.y - player.py) / (dt || 0.016);
@@ -774,7 +1004,7 @@
       const L = JOURNEY[journeyIdx];
       if (L.boss) { if (bosses.length === 0) { levelComplete(); return; } }
       else if (elapsed >= levelEndsAt) { levelComplete(); return; }
-    } else if (mode === "classic" && elapsed >= nextBiomeAt) { pickBiome(true, true); scheduleBiomeShift(); }
+    } else if ((mode === "classic" || mode === "arena") && elapsed >= nextBiomeAt) { pickBiome(true, true); scheduleBiomeShift(); }
 
     // difficulty ramps with time: more hunters fast, slightly slower speed.
     // rampTime excludes time spent frozen, so a late freeze doesn't make the game
@@ -793,6 +1023,11 @@
       const baseA = 200 + Math.min(180, (wave - 1) * 12);
       maxSpeed = (baseS + into * (MOBILE ? 1.2 : 1.5)) * dpr * sp * arenaScale;
       accel = (baseA + into * (MOBILE ? 2.4 : 3)) * dpr * sp * arenaScale;
+    } else if (mode === "arena") {
+      // Arena: gentle base ramp, but a stronger weapon ramps the threat with it
+      const wdiff = 1 + (weaponLvl - 1) * 0.05; // weapon level → tougher swarm
+      maxSpeed = (78 + st * 1.5) * dpr * sp * arenaScale * wdiff;
+      accel = (170 + st * 3) * dpr * sp * arenaScale * wdiff;
     } else {
       // Classic/Journey: ramp with active time; journey escalates a touch per level
       // (mobile journey nudged ~10% harder).
@@ -802,11 +1037,11 @@
     }
     // The Hive (yellow, slow clusterers) packs more nodes — bigger cap + faster build
     const hive = themeColor === "255,248,120";
-    const cap = Math.round((MOBILE ? 32 : 130) * arenaScale * (hive ? 1.45 : 1)), rate = (MOBILE ? 0.6 : 1.15) * (hive ? 1.5 : 1);
+    const cap = Math.round((MOBILE ? 32 : mode === "arena" ? 270 : 130) * arenaScale * (hive ? 1.45 : 1)), rate = (MOBILE ? 0.6 : 1.15) * (hive ? 1.5 : 1);
     // Journey resets elapsed each level, so it would re-ramp from sparse every time.
     // Start fuller, ramp faster, and escalate the floor with the level number.
-    const jBase = mode === "journey" ? 4 + journeyIdx : mode === "waves" ? 6 : 0;
-    const jRate = mode === "journey" ? 1.25 : mode === "waves" ? 1.25 : 1;
+    const jBase = mode === "journey" ? 4 + journeyIdx : mode === "waves" ? 6 : mode === "arena" ? 22 + (weaponLvl - 1) * 2 : 0;
+    const jRate = mode === "journey" ? 1.25 : mode === "waves" ? 1.25 : mode === "arena" ? 2.1 : 1;
     let targetCount = Math.min(cap, 6 + jBase + Math.floor(rt * rate * jRate));
     if (bossWave) targetCount = Math.min(targetCount, MOBILE ? 14 : 22); // thin the swarm so the boss is the threat
     else if (waveType === "special") targetCount = Math.min(targetCount, MOBILE ? 18 : 30); // calmer reward wave
@@ -819,13 +1054,14 @@
       spawnHunter();
       // journey fills faster, waves a bit slower (killed enemies don't snap back);
       // the Hive refills quickest of all
-      let gap = mode === "journey" ? 0.42 : mode === "waves" ? 0.9 : SPAWN_GAP;
+      let gap = mode === "journey" ? 0.42 : mode === "waves" ? 0.9 : mode === "arena" ? 0.28 : SPAWN_GAP;
       if (hive) gap *= 0.5;
       nextSpawn = elapsed + gap;
     }
 
     // spawn a rainbow star now and then; collect it by touching it
-    if (!star && elapsed >= nextStar) {
+    // (arena has its own weapon/buff pickups instead of these touch powerups)
+    if (mode !== "arena" && !star && elapsed >= nextStar) {
       star = { x: rand(w * 0.14, w * 0.86), y: rand(h * 0.16, h * 0.84), t: 0 };
     }
     if (star) {
@@ -839,7 +1075,7 @@
     }
 
     // freeze powerup — collect to freeze every hunter for a few seconds
-    if (!ice && elapsed >= nextIce) {
+    if (mode !== "arena" && !ice && elapsed >= nextIce) {
       ice = { x: rand(w * 0.14, w * 0.86), y: rand(h * 0.16, h * 0.84), t: 0 };
     }
     if (ice) {
@@ -867,7 +1103,7 @@
         mult = elapsed < comboUntil ? Math.min(MULT_MAX, mult + 1) : 1; // chain → multiplier
         comboUntil = elapsed + COMBO_WINDOW;
         points += GEM_VAL * mult;
-        ptsEl.textContent = String(points);
+        showPts();
         shocks.push({ x: g.x, y: g.y, t: 0, max: 60 * dpr });
         audio.sfx("gem");
         gems.splice(i, 1);
@@ -876,7 +1112,7 @@
     if (elapsed > comboUntil) mult = 1; // combo lapsed
 
     // shield powerup — absorbs one hit; while held the music brightens
-    if (!shield && !shieldActive && elapsed >= nextShield) {
+    if (mode !== "arena" && !shield && !shieldActive && elapsed >= nextShield) {
       shield = { x: rand(w * 0.14, w * 0.86), y: rand(h * 0.16, h * 0.84), t: 0 };
     }
     if (shield) {
@@ -889,7 +1125,7 @@
     }
 
     // shooter powerup — collect to auto-fire darts along your travel for a few seconds
-    if (!shooter && elapsed >= shootUntil && elapsed >= nextShooter) {
+    if (mode !== "arena" && !shooter && elapsed >= shootUntil && elapsed >= nextShooter) {
       shooter = { x: rand(w * 0.14, w * 0.86), y: rand(h * 0.16, h * 0.84), t: 0 };
     }
     if (shooter) {
@@ -920,6 +1156,61 @@
     // classic: occasional boss; chance it's a shooter rises the longer you survive
     if (mode === "classic" && bosses.length === 0 && elapsed >= nextBoss) {
       spawnBoss(undefined, Math.random() < Math.min(0.5, 0.18 + elapsed / 240));
+    }
+
+    // ---- arena: weapon drops, buff drops (both fade out), autofire, rotating bosses ----
+    if (mode === "arena") {
+      if (!regenShield && elapsed >= regenReadyAt) regenShield = true; // shield finished recharging
+      // weapon drop — same kind as held → level up; new kind → switch (level resets to 1)
+      if (!weaponPickup && elapsed >= nextWeaponDrop) {
+        const kind = WEAPON_KINDS[(Math.random() * WEAPON_KINDS.length) | 0];
+        weaponPickup = { x: rand(w * 0.12, w * 0.88), y: rand(h * 0.14, h * 0.86), t: 0, kind, born: elapsed };
+      }
+      if (weaponPickup) {
+        if (elapsed - weaponPickup.born > PICKUP_TTL) { weaponPickup = null; nextWeaponDrop = elapsed + 3 + Math.random() * 2; } // despawn
+        else {
+          const dx = player.x - weaponPickup.x, dy = player.y - weaponPickup.y, reach = STAR_R * 1.6 * dpr + player.r;
+          if (dx * dx + dy * dy < reach * reach) {
+            const pk = weaponPickup.kind;
+            weaponLvls[pk] = (weaponLvls[pk] || 0) + 1; // upgrade that kind (no cap; keeps its own level)
+            weapon = pk; weaponLvl = weaponLvls[pk]; // switch back later → resumes at its stored level
+            audio.sfx("blast"); say(WEAPONS[pk].name + ", level " + weaponLvl); // name, level
+            shocks.push({ x: weaponPickup.x, y: weaponPickup.y, t: 0, max: 130 * dpr, shield: true });
+            weaponPickup = null; nextWeaponDrop = elapsed + 4 + Math.random() * 3;
+          }
+        }
+      }
+      // buff drop — timed power-up (or shield/freeze, which use the shared systems)
+      if (!buffPickup && elapsed >= nextBuffDrop) {
+        const kind = BUFF_KINDS[(Math.random() * BUFF_KINDS.length) | 0];
+        buffPickup = { x: rand(w * 0.12, w * 0.88), y: rand(h * 0.14, h * 0.86), t: 0, kind, born: elapsed };
+      }
+      if (buffPickup) {
+        if (elapsed - buffPickup.born > PICKUP_TTL) { buffPickup = null; nextBuffDrop = elapsed + 3 + Math.random() * 2; } // despawn
+        else {
+          const dx = player.x - buffPickup.x, dy = player.y - buffPickup.y, reach = STAR_R * 1.6 * dpr + player.r;
+          if (dx * dx + dy * dy < reach * reach) {
+            const k = buffPickup.kind;
+            if (k === "shield") { shieldActive = true; audio.setShield(true); audio.sfx("shield"); }
+            else if (k === "freeze") { frozenUntil = elapsed + 4; audio.sfx("freeze"); shocks.push({ x: buffPickup.x, y: buffPickup.y, t: 0, max: 320 * dpr, ice: true }); }
+            else if (k === "heal") { playerHp = Math.min(playerMaxHp, playerHp + 1); audio.sfx("shield"); } // restore a life
+            else if (k === "levelup") { weaponLvls[weapon] = weaponLvl + 1; weaponLvl = weaponLvls[weapon]; audio.sfx("blast"); } // bump the current weapon a level
+            else { buffs[k] = elapsed + 9; audio.sfx("blast"); } // frenzy / power / bounce
+            say(BUFF_NAME[k] || k);
+            shocks.push({ x: buffPickup.x, y: buffPickup.y, t: 0, max: 130 * dpr, shield: true });
+            buffPickup = null; nextBuffDrop = elapsed + 4 + Math.random() * 3;
+          }
+        }
+      }
+      // rotating boss archetypes — warn first (voice + edge flash), then spawn a beat later
+      const wantBosses = Math.min(3, 1 + Math.floor(elapsed / 70));
+      if (bosses.length < wantBosses && !bossSpawnAt && elapsed >= nextArenaBoss) {
+        say(["Warning", "Danger", "Incoming", "Threat detected", "Alert", "Hostile inbound"][(Math.random() * 6) | 0]);
+        flashFrom = elapsed; flashUntil = elapsed + 1.4; flashCol = "255,170,40"; // amber = boss incoming (red is reserved for damage)
+        bossSpawnAt = elapsed + 1.4;
+        nextArenaBoss = elapsed + 13 + Math.random() * 7;
+      }
+      if (bossSpawnAt && elapsed >= bossSpawnAt) { spawnArenaBoss(); bossSpawnAt = 0; }
     }
 
     const frozen = elapsed < frozenUntil;
@@ -994,6 +1285,25 @@
       boss.t += dt;
       if (!frozen) {
         const p = boss.p;
+        const m = boss.r;
+        if (boss.kind === "charger") {
+          // Charger: drift in, wind up, then dash straight through the player; repeat
+          boss.chargeCd -= dt;
+          if (boss.dashing > 0) { boss.dashing -= dt; }
+          else if (boss.chargeCd <= 0) {
+            const dx = player.x - boss.x, dy = player.y - boss.y, d = Math.hypot(dx, dy) || 1;
+            const ds = 1050 * dpr * arenaScale;
+            boss.vx = dx / d * ds; boss.vy = dy / d * ds;
+            boss.dashing = 0.45; boss.chargeCd = 2 + Math.random() * 0.8; audio.sfx("blast");
+          } else { // slow creep between dashes
+            const dx = player.x - boss.x, dy = player.y - boss.y, d = Math.hypot(dx, dy) || 1;
+            const slow = 80 * dpr * arenaScale;
+            boss.vx = dx / d * slow; boss.vy = dy / d * slow;
+          }
+          boss.x += boss.vx * dt; boss.y += boss.vy * dt;
+          if (boss.x < m) { boss.x = m; boss.vx = Math.abs(boss.vx); } else if (boss.x > w - m) { boss.x = w - m; boss.vx = -Math.abs(boss.vx); }
+          if (boss.y < m) { boss.y = m; boss.vy = Math.abs(boss.vy); } else if (boss.y > h - m) { boss.y = h - m; boss.vy = -Math.abs(boss.vy); }
+        } else {
         let tx = player.x, ty = player.y;             // default: straight chase
         if (p.kind === "ambush") {                    // lead the player's motion
           tx = player.x + player.vx * 1.3; ty = player.y + player.vy * 1.3;
@@ -1014,20 +1324,39 @@
         const bsp = Math.hypot(boss.vx, boss.vy);
         if (bsp > bms) { boss.vx = (boss.vx / bsp) * bms; boss.vy = (boss.vy / bsp) * bms; }
         boss.x += boss.vx * dt; boss.y += boss.vy * dt;
-        const m = boss.r;
         if (boss.x < m) { boss.x = m; boss.vx = Math.abs(boss.vx); } else if (boss.x > w - m) { boss.x = w - m; boss.vx = -Math.abs(boss.vx); }
         if (boss.y < m) { boss.y = m; boss.vy = Math.abs(boss.vy); } else if (boss.y > h - m) { boss.y = h - m; boss.vy = -Math.abs(boss.vy); }
-        // shooter boss: lob an aimed shot on a cooldown
-        if (boss.shooter) {
+        }
+        // ranged attacks — arena archetypes fire distinct patterns; legacy shooter lobs aimed shots
+        const bspd = 300 * dpr * arenaScale;
+        if (boss.kind === "spiral") {            // steady rotating twin stream
+          boss.spin += dt * 2.6; boss.fireCd -= dt;
+          if (boss.fireCd <= 0) {
+            for (let s = 0; s < 2; s++) { const a = boss.spin + s * Math.PI; enemyBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * bspd, vy: Math.sin(a) * bspd, life: 3.6, color: boss.color }); }
+            boss.fireCd = 0.08; audio.sfx("pop");
+          }
+        } else if (boss.kind === "burst") {      // periodic radial ring
+          boss.fireCd -= dt;
+          if (boss.fireCd <= 0) {
+            const n = 18; for (let s = 0; s < n; s++) { const a = boss.seed + (s / n) * 6.283185; enemyBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * bspd, vy: Math.sin(a) * bspd, life: 3, color: boss.color }); }
+            boss.fireCd = 1.9; audio.sfx("blast");
+          }
+        } else if (boss.kind === "weaver") {     // aimed 3-shot fan
+          boss.fireCd -= dt;
+          if (boss.fireCd <= 0) {
+            const base = Math.atan2(player.y - boss.y, player.x - boss.x);
+            for (let s = -1; s <= 1; s++) { const a = base + s * 0.26; enemyBullets.push({ x: boss.x, y: boss.y, vx: Math.cos(a) * bspd, vy: Math.sin(a) * bspd, life: 3, color: boss.color }); }
+            boss.fireCd = 1.5; audio.sfx("pop");
+          }
+        } else if (!boss.kind && boss.shooter) { // legacy (classic/waves/journey) shooter boss
           boss.fireCd -= dt;
           if (boss.fireCd <= 0) {
             const dx = player.x - boss.x, dy = player.y - boss.y, d = Math.hypot(dx, dy) || 1;
-            const spd = 320 * dpr * arenaScale;
-            enemyBullets.push({ x: boss.x, y: boss.y, vx: dx / d * spd, vy: dy / d * spd, life: 3, color: boss.color });
-            boss.fireCd = 1.4;
-            audio.sfx("pop");
+            enemyBullets.push({ x: boss.x, y: boss.y, vx: dx / d * 320 * dpr * arenaScale, vy: dy / d * 320 * dpr * arenaScale, life: 3, color: boss.color });
+            boss.fireCd = 1.4; audio.sfx("pop");
           }
         }
+        // splitter: no ranged attack — pure pursuit, bursts into a big swarm on death
       }
       const bdx2 = player.x - boss.x, bdy2 = player.y - boss.y, brr = boss.r + player.r;
       if (bdx2 * bdx2 + bdy2 * bdy2 < brr * brr && takeHit()) { drawScene(); gameOver(); return; }
@@ -1036,8 +1365,7 @@
     // boss shots — travel, expire, and kill the player on contact (shield/i-frames apply)
     for (let i = enemyBullets.length - 1; i >= 0; i--) {
       const eb = enemyBullets[i];
-      if (!frozen) { eb.x += eb.vx * dt; eb.y += eb.vy * dt; }
-      eb.life -= dt;
+      if (!frozen) { eb.x += eb.vx * dt; eb.y += eb.vy * dt; eb.life -= dt; } // freeze halts travel AND lifespan
       if (eb.life <= 0 || eb.x < -30 || eb.x > w + 30 || eb.y < -30 || eb.y > h + 30) { enemyBullets.splice(i, 1); continue; }
       const dx = player.x - eb.x, dy = player.y - eb.y, rr = player.r + 6 * dpr;
       if (dx * dx + dy * dy < rr * rr) {
@@ -1049,27 +1377,200 @@
     // hunter-hunter forces (skipped while frozen) + lethal web check, one pass
     if (physics(dt, frozen) && takeHit()) { drawScene(); gameOver(); return; } // caught by a link
 
-    // shooter weapon — fire darts straight, but each leaves the node at a random ±2°
-    if (elapsed < shootUntil && elapsed >= nextBullet) {
+    // legacy shooter weapon (classic/waves/journey) — fire darts along travel, ±2°
+    if (mode !== "arena" && elapsed < shootUntil && elapsed >= nextBullet) {
       const bspd = 820 * dpr * arenaScale;
       const ang = Math.atan2(heading.y, heading.x) + (Math.random() * 2 - 1) * (2 * Math.PI / 180);
-      bullets.push({ x: player.x, y: player.y, vx: Math.cos(ang) * bspd, vy: Math.sin(ang) * bspd, life: 1.1 });
+      bullets.push({ x: player.x, y: player.y, vx: Math.cos(ang) * bspd, vy: Math.sin(ang) * bspd, life: 1.1, pierce: 0, dmg: 1 });
       nextBullet = elapsed + BULLET_GAP;
       audio.sfx("pop");
     }
+    // arena: autofire toward the mouse aim (holding the mouse is a temporary ceasefire)
+    if (mode === "arena" && !fireHold && playerAlpha > 0.5 && elapsed >= nextBullet) {
+      const odrive = buffs.overdrive > elapsed; // temp +10 levels → always rainbow
+      const ws = weaponStats(odrive ? weaponLvl + 10 : weaponLvl);
+      const power = buffs.power > elapsed;
+      const gap = ws.gap * (buffs.frenzy > elapsed ? 0.5 : 1);
+      const bspd = ws.spd * dpr * arenaScale;
+      const r = ws.r * (power ? 1.4 : 1) * 2.1 * dpr; // bullets chunky → easier hits
+      const pierce = ws.pierce + (power ? 3 : 0);
+      const bounce = buffs.bounce > elapsed || WEAPONS[weapon].bounce;
+      const dmg = ws.dmg * (power ? 1.5 : 1);
+      let base = Math.atan2(aimY - player.y, aimX - player.x);
+      // very slight autoaim — nudge toward whichever target sits closest to the aim line
+      let cone = 0.16, adj = 0, pull = 0.35;
+      for (const hn of hunters) {
+        let da = Math.atan2(hn.y - player.y, hn.x - player.x) - base;
+        while (da > Math.PI) da -= 6.283185; while (da < -Math.PI) da += 6.283185;
+        if (Math.abs(da) < cone) { cone = Math.abs(da); adj = da; }
+      }
+      for (const b of bosses) {
+        let da = Math.atan2(b.y - player.y, b.x - player.x) - base;
+        while (da > Math.PI) da -= 6.283185; while (da < -Math.PI) da += 6.283185;
+        if (Math.abs(da) < cone) { cone = Math.abs(da); adj = da; }
+      }
+      base += adj * pull;
+      const maxed = odrive || weaponLvl >= WEAPON_MAXLVL; // Lv10 (or Overdrive) → rainbow projectiles
+      const wcol = WEAPON_COLOR[weapon] || "150,255,210";
+      const effLvl = odrive ? weaponLvl + 10 : weaponLvl;
+      const expl = WEAPONS[weapon].explode, boom = expl ? (62 + effLvl * 6) * dpr * arenaScale : 0;
+      if (weapon === "wave") {
+        // expanding crescent shockwaves launched from the player along the aim
+        const wspd = ws.spd * dpr * arenaScale, maxR = 460 * dpr * arenaScale;
+        for (let k = 0; k < ws.waves; k++) {
+          arcs.push({ x: player.x, y: player.y, ang: base, age: -k * 0.13, spd: wspd, maxR, half: 0.42, band: (4 + ws.r) * dpr, dmg, rainbow: maxed, hit: new Set(), hitB: new Set() });
+        }
+      } else {
+        const homing = WEAPONS[weapon].homing;
+        const n = ws.count, fan = ws.spread || (n > 1 ? 0.12 : 0), angles = [];
+        for (let k = 0; k < n; k++) angles.push(base + (n === 1 ? 0 : (k / (n - 1) - 0.5) * fan) + (Math.random() * 2 - 1) * fan * 0.12);
+        for (const a of angles) bullets.push({ x: player.x, y: player.y, vx: Math.cos(a) * bspd, vy: Math.sin(a) * bspd, life: bounce ? 2.4 : homing ? 2.6 : 1.4, r, pierce, dmg, bounce, homing, explode: expl, boom, spd: bspd, col: wcol, kind: weapon, rainbow: maxed, hitB: null });
+      }
+      nextBullet = elapsed + gap;
+      audio.sfx("pop");
+    }
+    // hunter spatial grid for bullet collisions (kills are marked, then filtered once
+    // after the bullet + arc passes — avoids O(bullets × hunters) every frame)
+    let bhGrid = null, bhCell = 72 * dpr, bhCols = 1, bhRows = 1;
+    if (bullets.length) {
+      bhCols = Math.max(1, Math.ceil(w / bhCell)); bhRows = Math.max(1, Math.ceil(h / bhCell));
+      bhGrid = new Array(bhCols * bhRows);
+      for (let j = 0; j < hunters.length; j++) {
+        const hn = hunters[j];
+        const ci = Math.min(bhCols - 1, Math.max(0, (hn.x / bhCell) | 0));
+        const ri = Math.min(bhRows - 1, Math.max(0, (hn.y / bhCell) | 0));
+        const idx = ri * bhCols + ci;
+        (bhGrid[idx] || (bhGrid[idx] = [])).push(hn);
+      }
+    }
+    let bulletKills = false;
     for (let i = bullets.length - 1; i >= 0; i--) {
       const bl = bullets[i];
+      const br = bl.r || 5 * dpr;
+      if (bl.homing) { // Seeker: curve toward the nearest node/boss within a few grid cells
+        let bestD2 = (520 * dpr) ** 2, tx = 0, ty = 0, found = false;
+        const hci = Math.min(bhCols - 1, Math.max(0, (bl.x / bhCell) | 0));
+        const hri = Math.min(bhRows - 1, Math.max(0, (bl.y / bhCell) | 0));
+        for (let oy = -3; oy <= 3; oy++) {
+          const ny = hri + oy; if (ny < 0 || ny >= bhRows) continue;
+          for (let ox = -3; ox <= 3; ox++) {
+            const nx = hci + ox; if (nx < 0 || nx >= bhCols) continue;
+            const arr = bhGrid && bhGrid[ny * bhCols + nx]; if (!arr) continue;
+            for (let k = 0; k < arr.length; k++) { const hn = arr[k]; if (hn.dead) continue; const dx = hn.x - bl.x, dy = hn.y - bl.y, d2 = dx * dx + dy * dy; if (d2 < bestD2) { bestD2 = d2; tx = hn.x; ty = hn.y; found = true; } }
+          }
+        }
+        for (const b of bosses) { if (!b.maxHp) continue; const dx = b.x - bl.x, dy = b.y - bl.y, d2 = dx * dx + dy * dy; if (d2 < bestD2) { bestD2 = d2; tx = b.x; ty = b.y; found = true; } }
+        if (found) {
+          let cur = Math.atan2(bl.vy, bl.vx);
+          let da = Math.atan2(ty - bl.y, tx - bl.x) - cur; while (da > Math.PI) da -= 6.283185; while (da < -Math.PI) da += 6.283185;
+          const turn = 7 * dt; cur += Math.max(-turn, Math.min(turn, da));
+          const sp = bl.spd || Math.hypot(bl.vx, bl.vy);
+          bl.vx = Math.cos(cur) * sp; bl.vy = Math.sin(cur) * sp;
+        }
+      }
       bl.x += bl.vx * dt; bl.y += bl.vy * dt; bl.life -= dt;
-      if (bl.life <= 0 || bl.x < -30 || bl.x > w + 30 || bl.y < -30 || bl.y > h + 30) { bullets.splice(i, 1); continue; }
-      for (let j = hunters.length - 1; j >= 0; j--) {
-        const hn = hunters[j];
-        const dx = hn.x - bl.x, dy = hn.y - bl.y, rr = hn.r + 5 * dpr;
+      if (bl.bounce) { // ricochet off the walls (arena Bounce buff)
+        if (bl.x < 0) { bl.x = 0; bl.vx = Math.abs(bl.vx); } else if (bl.x > w) { bl.x = w; bl.vx = -Math.abs(bl.vx); }
+        if (bl.y < 0) { bl.y = 0; bl.vy = Math.abs(bl.vy); } else if (bl.y > h) { bl.y = h; bl.vy = -Math.abs(bl.vy); }
+        if (bl.life <= 0) { bullets.splice(i, 1); continue; }
+      } else if (bl.life <= 0 || bl.x < -30 || bl.x > w + 30 || bl.y < -30 || bl.y > h + 30) { bullets.splice(i, 1); continue; }
+      let spent = false;
+      // hunters — destroyed outright (marked dead, filtered later); pierce passes through several.
+      // only the 9 grid cells around the bullet are checked, not every hunter.
+      const ci = Math.min(bhCols - 1, Math.max(0, (bl.x / bhCell) | 0));
+      const ri = Math.min(bhRows - 1, Math.max(0, (bl.y / bhCell) | 0));
+      for (let oy = -1; oy <= 1 && !spent; oy++) {
+        const ny = ri + oy; if (ny < 0 || ny >= bhRows) continue;
+        for (let ox = -1; ox <= 1 && !spent; ox++) {
+          const nx = ci + ox; if (nx < 0 || nx >= bhCols) continue;
+          const arr = bhGrid && bhGrid[ny * bhCols + nx]; if (!arr) continue;
+          for (let k = 0; k < arr.length; k++) {
+            const hn = arr[k]; if (hn.dead) continue;
+            const dx = hn.x - bl.x, dy = hn.y - bl.y, rr = hn.r + br;
+            if (dx * dx + dy * dy < rr * rr) {
+              if (bl.explode) { explode(bl.x, bl.y, bl.boom, bl.dmg); bulletKills = true; spent = true; break; }
+              hn.dead = true; bulletKills = true;
+              points += KILL_VAL;
+              shocks.push({ x: bl.x, y: bl.y, t: 0, max: 46 * dpr });
+              if ((bl.pierce = (bl.pierce | 0) - 1) < 0) { spent = true; break; }
+            }
+          }
+        }
+      }
+      if (spent) { bullets.splice(i, 1); continue; }
+      // shoot down incoming boss shots
+      for (let ei = enemyBullets.length - 1; ei >= 0; ei--) {
+        const eb = enemyBullets[ei];
+        const dx = eb.x - bl.x, dy = eb.y - bl.y, rr = br + 6 * dpr;
         if (dx * dx + dy * dy < rr * rr) {
-          hunters.splice(j, 1);
-          points += KILL_VAL; ptsEl.textContent = String(points);
-          shocks.push({ x: bl.x, y: bl.y, t: 0, max: 46 * dpr });
-          bullets.splice(i, 1);
-          break;
+          enemyBullets.splice(ei, 1);
+          shocks.push({ x: bl.x, y: bl.y, t: 0, max: 30 * dpr });
+          if ((bl.pierce = (bl.pierce | 0) - 1) < 0) { spent = true; break; }
+        }
+      }
+      if (spent) { bullets.splice(i, 1); continue; }
+      // bosses — chip hp (each bullet damages a given boss once); arena bosses only
+      for (let bi = bosses.length - 1; bi >= 0; bi--) {
+        const b = bosses[bi];
+        if (!b.maxHp) continue;
+        if (bl.hitB && bl.hitB.has(b)) continue;
+        const dx = b.x - bl.x, dy = b.y - bl.y, rr = b.r + br;
+        if (dx * dx + dy * dy < rr * rr) {
+          if (bl.explode) { if (explode(bl.x, bl.y, bl.boom, bl.dmg)) bulletKills = true; spent = true; break; } // Mortar bursts on the boss
+          b.hp -= bl.dmg || 1;
+          (bl.hitB || (bl.hitB = new Set())).add(b);
+          shocks.push({ x: bl.x, y: bl.y, t: 0, max: 38 * dpr });
+          if (b.hp <= 0) {
+            popInto(b.x, b.y, b.color, b.kind === "splitter" ? 16 : 9);
+            points += BOSS_VAL; showPts();
+            shocks.push({ x: b.x, y: b.y, t: 0, max: 240 * dpr, rainbow: true });
+            audio.sfx("blast");
+            bosses.splice(bi, 1);
+            if (mode === "arena" && bosses.length === 0) nextArenaBoss = elapsed + 8 + Math.random() * 5;
+          } else if (bl.bounce) {
+            // ricochet off the boss instead of tunnelling through it
+            const d = Math.hypot(dx, dy) || 1, nx = -dx / d, ny = -dy / d; // boss → bullet
+            const dot = bl.vx * nx + bl.vy * ny;
+            bl.vx -= 2 * dot * nx; bl.vy -= 2 * dot * ny;
+            bl.x = b.x + nx * (b.r + br + 1); bl.y = b.y + ny * (b.r + br + 1);
+            if (bl.hitB) bl.hitB.delete(b); // can chip again on the next bounce in
+            break;
+          }
+          if ((bl.pierce = (bl.pierce | 0) - 1) < 0) { spent = true; break; }
+        }
+      }
+      if (spent) { bullets.splice(i, 1); continue; }
+    }
+    if (bulletKills) { showPts(); hunters = hunters.filter((hn) => !hn.dead); } // sweep bullet-killed nodes once
+
+    // Wave crescents — expand from the player, sweeping nodes/bosses inside the band + arc
+    for (let i = arcs.length - 1; i >= 0; i--) {
+      const ar = arcs[i];
+      ar.age += dt;
+      if (ar.age < 0) continue; // staggered launch
+      const rad = ar.age * ar.spd;
+      if (rad > ar.maxR) { arcs.splice(i, 1); continue; }
+      const innr = rad - ar.band, inner2 = innr > 0 ? innr * innr : 0, outer2 = (rad + ar.band) * (rad + ar.band);
+      for (let j = hunters.length - 1; j >= 0; j--) {
+        const hn = hunters[j]; if (ar.hit.has(hn)) continue;
+        const dx = hn.x - ar.x, dy = hn.y - ar.y, d2 = dx * dx + dy * dy;
+        if (d2 < inner2 || d2 > outer2) continue;
+        let da = Math.atan2(dy, dx) - ar.ang; while (da > Math.PI) da -= 6.283185; while (da < -Math.PI) da += 6.283185;
+        if (Math.abs(da) <= ar.half) { hunters.splice(j, 1); points += KILL_VAL; showPts(); ar.hit.add(hn); shocks.push({ x: hn.x, y: hn.y, t: 0, max: 36 * dpr }); }
+      }
+      for (let bi = bosses.length - 1; bi >= 0; bi--) {
+        const b = bosses[bi]; if (!b.maxHp || ar.hitB.has(b)) continue;
+        const dx = b.x - ar.x, dy = b.y - ar.y, d2 = dx * dx + dy * dy;
+        if (d2 < inner2 || d2 > outer2) continue;
+        let da = Math.atan2(dy, dx) - ar.ang; while (da > Math.PI) da -= 6.283185; while (da < -Math.PI) da += 6.283185;
+        if (Math.abs(da) > ar.half) continue;
+        b.hp -= ar.dmg; ar.hitB.add(b);
+        if (b.hp <= 0) {
+          popInto(b.x, b.y, b.color, b.kind === "splitter" ? 16 : 9);
+          points += BOSS_VAL; showPts();
+          shocks.push({ x: b.x, y: b.y, t: 0, max: 240 * dpr, rainbow: true });
+          audio.sfx("blast"); bosses.splice(bi, 1);
+          if (mode === "arena" && bosses.length === 0) nextArenaBoss = elapsed + 8 + Math.random() * 5;
         }
       }
     }
@@ -1078,7 +1579,44 @@
     requestAnimationFrame(loop);
   }
 
-  // one O(n²) pass over hunter pairs:
+  // uniform spatial grid: bucket hunters into cells sized to the max interaction
+  // radius, then visit only the 9-cell neighbourhood per node → near-O(n) instead of
+  // O(n²). Each unordered pair is handed to fn exactly once (j > i).
+  let gridCells = [], gridCx = [], gridCy = [];
+  function forEachPair(fn) {
+    const n = hunters.length;
+    if (n < 2) return;
+    const cell = Math.max(74 * dpr * GROUP_SCALE, JOLT_R * dpr, COH_R * dpr, GROUP_R * dpr * GROUP_SCALE, Math.sqrt(linkD2)) + 1;
+    const cols = Math.max(1, Math.ceil(w / cell)), rows = Math.max(1, Math.ceil(h / cell));
+    const grid = gridCells; grid.length = cols * rows; grid.fill(null);
+    gridCx.length = n; gridCy.length = n;
+    for (let i = 0; i < n; i++) {
+      const hx = hunters[i].x, hy = hunters[i].y;
+      const ci = hx < 0 ? 0 : hx >= w ? cols - 1 : (hx / cell) | 0;
+      const ri = hy < 0 ? 0 : hy >= h ? rows - 1 : (hy / cell) | 0;
+      gridCx[i] = ci; gridCy[i] = ri;
+      const idx = ri * cols + ci;
+      (grid[idx] || (grid[idx] = [])).push(i);
+    }
+    for (let i = 0; i < n; i++) {
+      const ci = gridCx[i], ri = gridCy[i], a = hunters[i];
+      for (let oy = -1; oy <= 1; oy++) {
+        const ny = ri + oy; if (ny < 0 || ny >= rows) continue;
+        for (let ox = -1; ox <= 1; ox++) {
+          const nx = ci + ox; if (nx < 0 || nx >= cols) continue;
+          const arr = grid[ny * cols + nx]; if (!arr) continue;
+          for (let k = 0; k < arr.length; k++) {
+            const j = arr[k]; if (j <= i) continue;
+            const b = hunters[j];
+            const dx = b.x - a.x, dy = b.y - a.y;
+            fn(i, j, a, b, dx, dy, dx * dx + dy * dy);
+          }
+        }
+      }
+    }
+  }
+
+  // hunter-hunter forces + lethal-web detection, one neighbourhood pass via the grid:
   //  - soft repulsion within SEP so they spread into a cloud, not a clump
   //  - hard separation when actually overlapping
   //  - if a drawn link (pair within LINK_DIST) touches the player → lethal
@@ -1091,20 +1629,15 @@
     // frozen: hunters don't move, only their webs can still catch you
     if (frozen) {
       let kill = false;
-      for (let i = 0; i < hunters.length; i++) {
-        const a = hunters[i];
-        for (let j = i + 1; j < hunters.length; j++) {
-          const b = hunters[j];
-          const dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy;
-          if (d2 < linkD2) {
-            const key = a.id < b.id ? a.id + "|" + b.id : b.id + "|" + a.id;
-            const lifeT = (prevAges.get(key) || 0) + dt;
-            nextAges.set(key, lifeT);
-            links.push({ a, b, al: 1 - d2 / linkD2, same: a.color === b.color });
-            if (!kill && lifeT >= WEB_GRACE && segHitsPlayer(a.x, a.y, b.x, b.y)) kill = true;
-          }
+      forEachPair((i, j, a, b, dx, dy, d2) => {
+        if (d2 < linkD2) {
+          const key = a.id < b.id ? a.id + "|" + b.id : b.id + "|" + a.id;
+          const lifeT = (prevAges.get(key) || 0) + dt;
+          nextAges.set(key, lifeT);
+          links.push({ a, b, al: 1 - d2 / linkD2, same: a.color === b.color });
+          if (!kill && lifeT >= WEB_GRACE && segHitsPlayer(a.x, a.y, b.x, b.y)) kill = true;
         }
-      }
+      });
       linkAges = nextAges;
       return kill;
     }
@@ -1120,13 +1653,8 @@
     const cnt = new Array(n).fill(0), sx = new Array(n).fill(0), sy = new Array(n).fill(0);
     const scnt = new Array(n).fill(0); // same-colour clump-mates
     let linkKill = false;
-    for (let i = 0; i < n; i++) {
-      const a = hunters[i];
-      for (let j = i + 1; j < n; j++) {
-        const b = hunters[j];
-        const dx = b.x - a.x, dy = b.y - a.y;
-        const d2 = dx * dx + dy * dy;
-        if (d2 <= 0.01) continue;
+    forEachPair((i, j, a, b, dx, dy, d2) => {
+        if (d2 <= 0.01) return;
         if (d2 < JR2) { cnt[i]++; cnt[j]++; sx[i] += b.x; sy[i] += b.y; sx[j] += a.x; sy[j] += a.y; }
         const same = a.color === b.color;
         if (same && d2 < GR2) { scnt[i]++; scnt[j]++; }
@@ -1134,7 +1662,7 @@
           const d = Math.sqrt(d2), ux = dx / d, uy = dy / d;
           // same colour barely repels (lets them pack tight, even tighter over time);
           // different colours shove hard — and harder over time — to stay segregated
-          const f = (1 - d / SEP) * (same ? 90 / tight : 1700 * tight) * dpr * dt;
+          const f = (1 - d / SEP) * (same ? 68 / tight : 1700 * tight) * dpr * dt;
           a.vx -= ux * f; a.vy -= uy * f;
           b.vx += ux * f; b.vy += uy * f;
           const min = a.r + b.r;
@@ -1148,7 +1676,7 @@
           // nodes are free to chase the cursor). Crowded clump → members repel → split.
           const d = Math.sqrt(d2), ux = dx / d, uy = dy / d;
           const crowded = (a.snb || 0) >= (a.p.split || SPLIT_SIZE) || (b.snb || 0) >= (b.p.split || SPLIT_SIZE);
-          const cf = a.p.coh * (crowded ? -220 : 430 * tight) * dpr * dt; // gather harder over time
+          const cf = a.p.coh * (crowded ? -220 : 560 * tight) * dpr * dt; // gather harder over time
           a.vx += ux * cf; a.vy += uy * cf;
           b.vx -= ux * cf; b.vy -= uy * cf;
         } else if (d2 < CR2) {
@@ -1165,8 +1693,7 @@
           links.push({ a, b, al: 1 - d2 / linkD2, same });
           if (!linkKill && lifeT >= WEB_GRACE && segHitsPlayer(a.x, a.y, b.x, b.y)) linkKill = true;
         }
-      }
-    }
+    });
     // crowding: a node with ≥ JOLT_X neighbours jolts away from the local centroid
     for (let i = 0; i < n; i++) {
       const a = hunters[i];
@@ -1229,6 +1756,51 @@
     ctx.shadowBlur = 0;
   }
 
+  // circular health ring around an arena boss — depletes clockwise from the top,
+  // colour shifts red as it nears death
+  function drawBossHealth(boss) {
+    const frac = Math.max(0, Math.min(1, boss.hp / boss.maxHp));
+    const R = boss.r + 11 * dpr;
+    ctx.save();
+    ctx.translate(boss.x, boss.y);
+    ctx.lineWidth = 4 * dpr; ctx.lineCap = "round";
+    ctx.strokeStyle = "rgba(10,8,16,0.7)"; // track
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, 6.283185); ctx.stroke();
+    const hue = 120 * frac; // green → red as hp drops
+    ctx.strokeStyle = `hsl(${hue},85%,58%)`;
+    ctx.shadowColor = `hsl(${hue},85%,58%)`; ctx.shadowBlur = 8 * dpr;
+    ctx.beginPath(); ctx.arc(0, 0, R, -Math.PI / 2, -Math.PI / 2 + frac * 6.283185); ctx.stroke();
+    ctx.restore();
+    ctx.shadowBlur = 0;
+  }
+
+  // boss attack tell — a glow ring that brightens/swells as the next fire or dash
+  // approaches, so the player can read the windup. Charger also paints its dash line.
+  function drawBossTelegraph(b) {
+    let tele = 0, lead = 0;
+    if (b.kind === "charger") { if (b.dashing > 0) return; lead = 0.9; tele = b.chargeCd < lead ? 1 - b.chargeCd / lead : 0; } // tell only during wind-up, not the dash
+    else if (b.kind === "burst") { lead = 0.75; tele = b.fireCd < lead ? 1 - b.fireCd / lead : 0; }
+    else if (b.kind === "weaver") { lead = 0.6; tele = b.fireCd < lead ? 1 - b.fireCd / lead : 0; }
+    else if (!b.kind && b.shooter) { lead = 0.6; tele = b.fireCd < lead ? 1 - b.fireCd / lead : 0; }
+    if (tele <= 0) return;
+    const c = b.color;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.globalAlpha = Math.min(1, tele);
+    if (b.kind === "charger") { // dash path the boss is about to take
+      const ang = Math.atan2(player.y - b.y, player.x - b.x);
+      ctx.strokeStyle = `rgba(${c},${0.5 * tele})`; ctx.lineWidth = 3 * dpr; ctx.setLineDash([9 * dpr, 9 * dpr]);
+      ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(ang) * 460 * dpr, Math.sin(ang) * 460 * dpr); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.strokeStyle = `rgba(${c},${0.4 + 0.5 * tele})`;
+    ctx.lineWidth = (2 + 5 * tele) * dpr;
+    ctx.shadowColor = `rgba(${c},0.95)`; ctx.shadowBlur = (10 + 22 * tele) * dpr;
+    ctx.beginPath(); ctx.arc(0, 0, b.r + (6 + 16 * tele) * dpr, 0, 6.283185); ctx.stroke();
+    ctx.restore();
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  }
+
   // boss — big menacing spiked orb with a glaring eye, in its own colour.
   // Deliberately unlike the small glowy powerup icons: spiky, dark-bodied, an eye.
   function drawBoss(boss) {
@@ -1238,20 +1810,49 @@
     ctx.save();
     ctx.translate(boss.x, boss.y);
 
-    // rotating spiked corona — jagged star, clearly a threat not a pickup
-    ctx.rotate(boss.t * 0.8);
-    ctx.shadowColor = `rgba(${c},0.95)`; ctx.shadowBlur = 30 * dpr;
-    ctx.fillStyle = `rgba(${c},0.9)`;
-    const spikes = 12;
-    ctx.beginPath();
-    for (let i = 0; i < spikes * 2; i++) {
-      const ang = (Math.PI / spikes) * i;
-      const rad = i % 2 ? R * 1.55 : R * 1.05;
-      const x = Math.cos(ang) * rad, y = Math.sin(ang) * rad;
-      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    // corona — a distinct silhouette per archetype so each boss reads at a glance
+    ctx.shadowColor = `rgba(${c},0.95)`; ctx.shadowBlur = 26 * dpr;
+    ctx.fillStyle = `rgba(${c},0.9)`; ctx.strokeStyle = `rgba(${c},0.95)`; ctx.lineCap = "round";
+    const k = boss.kind;
+    if (k === "spiral") {            // pinwheel of curved arms
+      ctx.rotate(boss.t * 1.2);
+      for (let a = 0; a < 5; a++) {
+        const a0 = (6.283185 / 5) * a;
+        ctx.beginPath(); ctx.moveTo(0, 0);
+        for (let s = 0; s <= 8; s++) { const u = s / 8, ang = a0 + u * 1.1, rad = R * (0.6 + u); ctx.lineTo(Math.cos(ang) * rad, Math.sin(ang) * rad); }
+        for (let s = 8; s >= 0; s--) { const u = s / 8, ang = a0 + u * 1.1 + 0.26, rad = R * (0.6 + u); ctx.lineTo(Math.cos(ang) * rad, Math.sin(ang) * rad); }
+        ctx.closePath(); ctx.fill();
+      }
+      ctx.rotate(-boss.t * 1.2);
+    } else if (k === "burst") {      // long thin radiating rays
+      ctx.rotate(boss.t * 0.5); ctx.lineWidth = 2.6 * dpr;
+      for (let a = 0; a < 16; a++) { const ang = (6.283185 / 16) * a; ctx.beginPath(); ctx.moveTo(Math.cos(ang) * R, Math.sin(ang) * R); ctx.lineTo(Math.cos(ang) * R * 1.75, Math.sin(ang) * R * 1.75); ctx.stroke(); }
+      ctx.rotate(-boss.t * 0.5);
+    } else if (k === "charger") {    // arrowhead ram aimed at the player
+      const look = Math.atan2(player.y - boss.y, player.x - boss.x);
+      ctx.rotate(look);
+      ctx.beginPath(); ctx.moveTo(R * 1.95, 0); ctx.lineTo(R * 0.55, -R * 0.95); ctx.lineTo(R * 0.55, R * 0.95); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-R * 0.4, -R * 0.8); ctx.lineTo(-R * 1.35, -R * 1.1); ctx.lineTo(-R * 0.5, -R * 0.15); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(-R * 0.4, R * 0.8); ctx.lineTo(-R * 1.35, R * 1.1); ctx.lineTo(-R * 0.5, R * 0.15); ctx.closePath(); ctx.fill();
+      ctx.rotate(-look);
+    } else if (k === "splitter") {   // broken segmented ring — looks ready to split
+      ctx.rotate(boss.t * 0.6); ctx.lineWidth = 5 * dpr;
+      for (let a = 0; a < 6; a++) { const a0 = (6.283185 / 6) * a + 0.12; ctx.beginPath(); ctx.arc(0, 0, R * 1.4, a0, a0 + 6.283185 / 6 - 0.34); ctx.stroke(); }
+      ctx.rotate(-boss.t * 0.6);
+    } else if (k === "weaver") {     // hexagonal web lattice
+      ctx.rotate(boss.t * 0.4); ctx.lineWidth = 2 * dpr;
+      const pts = [];
+      for (let a = 0; a < 6; a++) { const ang = (Math.PI / 3) * a; pts.push([Math.cos(ang) * R * 1.5, Math.sin(ang) * R * 1.5]); }
+      ctx.beginPath(); pts.forEach(([x, y], a) => (a ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.closePath(); ctx.stroke();
+      for (let a = 0; a < 6; a++) { ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(pts[a][0], pts[a][1]); ctx.stroke(); }
+      ctx.rotate(-boss.t * 0.4);
+    } else {                          // non-arena bosses: jagged 12-spike star
+      ctx.rotate(boss.t * 0.8);
+      ctx.beginPath();
+      for (let i = 0; i < 24; i++) { const ang = (Math.PI / 12) * i, rad = i % 2 ? R * 1.55 : R * 1.05; const x = Math.cos(ang) * rad, y = Math.sin(ang) * rad; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+      ctx.closePath(); ctx.fill();
+      ctx.rotate(-boss.t * 0.8);
     }
-    ctx.closePath(); ctx.fill();
-    ctx.rotate(-boss.t * 0.8);
     ctx.shadowBlur = 0;
 
     // dark body + bright colour rim
@@ -1357,6 +1958,86 @@
     ctx.shadowBlur = 0;
   }
 
+  // arena pickup fade: full while fresh, blinks + fades over the last 2.5s of its life
+  function pickupAlpha(p) {
+    const left = PICKUP_TTL - (elapsed - p.born);
+    if (left > 2.5) return 1;
+    const blink = ((elapsed * 6) | 0) % 2 ? 0.35 : 1; // urgent blink as it's about to vanish
+    return Math.max(0, left / 2.5) * blink;
+  }
+
+  // arena weapon drop — a glowing diamond with a per-kind glyph + colour
+  const WEAPON_COLOR = { spread: "255,200,90", rapid: "150,255,210", homing: "120,196,255", ricochet: "120,255,190", mortar: "255,140,60", wave: "199,116,232", dart: "170,255,215" };
+  const WEAPON_GLYPH = { spread: "≪", rapid: "»", homing: "◎", ricochet: "⇆", mortar: "➤", wave: "≈", dart: "↑" };
+  function drawWeaponPickup(cx, cy, t, kind, alpha) {
+    const c = WEAPON_COLOR[kind] || "150,255,210";
+    const R = (STAR_R * 1.6 + 2 + Math.sin(t * 5) * 1.5) * dpr;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx, cy);
+    ctx.shadowColor = `rgba(${c},0.9)`; ctx.shadowBlur = 16 * dpr;
+    ctx.lineWidth = 2.6 * dpr; ctx.strokeStyle = `rgba(${c},0.96)`;
+    ctx.rotate(Math.PI / 4);
+    ctx.strokeRect(-R * 0.62, -R * 0.62, R * 1.24, R * 1.24); // diamond
+    ctx.rotate(-Math.PI / 4);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = `rgba(${c},0.98)`;
+    ctx.font = `700 ${24 * dpr}px "General Sans", system-ui, sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(WEAPON_GLYPH[kind] || "»", 0, dpr);
+    // name label below, so it's obvious which weapon (and that it IS a weapon)
+    ctx.font = `700 ${10 * dpr}px "General Sans", system-ui, sans-serif`;
+    ctx.textBaseline = "top";
+    ctx.fillStyle = `rgba(${c},0.95)`;
+    ctx.fillText("⬗ " + WEAPONS[kind].name.toUpperCase(), 0, R + 5 * dpr);
+    ctx.restore();
+    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+  }
+
+  // arena buff drop — a glowing hexagon with a per-kind glyph + colour
+  const BUFF_STYLE = {
+    shield: ["150,225,255", "⬡"], frenzy: ["255,106,213", "✸"],
+    power:  ["255,138,96", "✦"],  bounce: ["120,255,190", "⟲"], freeze: ["190,240,255", "❄"],
+    heal:   ["255,90,120", "♥"], levelup: ["255,236,120", "▲"], overdrive: ["120,255,255", "★"],
+  };
+  const BUFF_NAME = { shield: "Shield", frenzy: "Frenzy", power: "Power", bounce: "Bounce", freeze: "Freeze", heal: "Heal", levelup: "Level Up", overdrive: "Overdrive" };
+  function drawBuffPickup(cx, cy, t, kind, alpha) {
+    const st = BUFF_STYLE[kind] || ["150,255,210", "✦"], c = st[0];
+    const R = (STAR_R * 1.6 + 1 + Math.sin(t * 5) * 1.5) * dpr;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(cx, cy); ctx.rotate(t * 0.4);
+    ctx.shadowColor = `rgba(${c},0.9)`; ctx.shadowBlur = 16 * dpr;
+    ctx.lineWidth = 2.6 * dpr; ctx.strokeStyle = `rgba(${c},0.96)`;
+    ctx.beginPath();
+    for (let i = 0; i <= 6; i++) { const a = (Math.PI / 3) * i; const x = Math.cos(a) * R, y = Math.sin(a) * R; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    ctx.stroke();
+    ctx.rotate(-t * 0.4);
+    ctx.shadowBlur = 0;
+    if (kind === "bounce") {
+      // a coiled spring — reads as bounce/ricochet
+      ctx.strokeStyle = `rgba(${c},0.98)`; ctx.lineWidth = 2 * dpr; ctx.lineCap = "round"; ctx.lineJoin = "round";
+      const sr = R * 0.42, turns = 4, top = -R * 0.5, bot = R * 0.5, seg = 24;
+      ctx.beginPath();
+      ctx.moveTo(-sr * 0.6, top); ctx.lineTo(sr * 0.6, top); // top cap
+      for (let i = 0; i <= seg; i++) { const u = i / seg; const y = top + (bot - top) * u; const x = Math.sin(u * turns * 6.283185) * sr; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+      ctx.moveTo(-sr * 0.6, bot); ctx.lineTo(sr * 0.6, bot); // bottom cap
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = `rgba(${c},0.98)`;
+      ctx.font = `700 ${22 * dpr}px "General Sans", system-ui, sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(st[1], 0, dpr);
+    }
+    // name label below — names the buff and marks it as a power-up (hexagon, not weapon diamond)
+    ctx.font = `700 ${10 * dpr}px "General Sans", system-ui, sans-serif`;
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillStyle = `rgba(${c},0.95)`;
+    ctx.fillText("⬡ " + (BUFF_NAME[kind] || kind).toUpperCase(), 0, R + 5 * dpr);
+    ctx.restore();
+    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+  }
+
   // player caught if within (its radius + half web width + kill-band) of segment a→b
   function segHitsPlayer(ax, ay, bx, by) {
     const vx = bx - ax, vy = by - ay;
@@ -1389,11 +2070,11 @@
       const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
       grd.addColorStop(0, `rgba(${r},${g},${b},${a * am})`);
       grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
-      ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = grd; ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2); // bounded to the blob, not the whole screen
       i++;
     }
     // extra wandering mottle blobs drawn from the palette — more texture, always moving
-    const gl = bm.glows, mott = MOBILE ? 2 : 4;
+    const gl = bm.glows, mott = MOBILE ? 3 : 6;
     for (let k = 0; k < mott; k++) {
       const [r, g, b] = gl[k % gl.length];
       const ph = k * 2.3 + 0.6;
@@ -1403,10 +2084,21 @@
       const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
       grd.addColorStop(0, `rgba(${r},${g},${b},${0.10 * am})`);
       grd.addColorStop(1, `rgba(${r},${g},${b},0)`);
-      ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = grd; ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2); // bounded to the blob, not the whole screen
+    }
+    // light splodges — soft pale highlights drifting the other way, lifts the mood
+    for (let k = 0; k < (MOBILE ? 1 : 3); k++) {
+      const ph = k * 2.7 + 2.2;
+      const cx = w * (0.5 + Math.cos(bgT * 0.045 + ph) * 0.44);
+      const cy = h * (0.5 + Math.sin(bgT * 0.067 + ph * 1.2) * 0.44);
+      const rad = D * (0.24 + 0.12 * Math.sin(bgT * 0.1 + ph));
+      const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+      grd.addColorStop(0, `rgba(225,235,255,${0.07 * am})`);
+      grd.addColorStop(1, "rgba(225,235,255,0)");
+      ctx.fillStyle = grd; ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2); // bounded to the blob, not the whole screen
     }
     // dark drifting patches — carve out shadowed regions for more contrast
-    for (let k = 0; k < (MOBILE ? 2 : 3); k++) {
+    for (let k = 0; k < (MOBILE ? 3 : 5); k++) {
       const ph = k * 3.1 + 1.4;
       const cx = w * (0.5 + Math.sin(bgT * 0.063 + ph) * 0.46);
       const cy = h * (0.5 + Math.cos(bgT * 0.05 + ph * 1.5) * 0.46);
@@ -1414,7 +2106,7 @@
       const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
       grd.addColorStop(0, `rgba(4,3,10,${0.34 * am})`);
       grd.addColorStop(1, "rgba(4,3,10,0)");
-      ctx.fillStyle = grd; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = grd; ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2); // bounded to the blob, not the whole screen
     }
     if (bm.vig) { // darken the edges to keep it grounded and dark
       const v = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.34, w / 2, h / 2, D * 0.75);
@@ -1427,45 +2119,49 @@
   // drifts slowly so it feels alive
   function paintPattern(type, am) {
     if (!type || type === "none" || am <= 0) return;
-    const a = 0.05 * am;
+    const a = 0.13 * am;
     ctx.save();
     ctx.strokeStyle = `rgba(255,255,255,${a})`;
     ctx.fillStyle = `rgba(255,255,255,${a})`;
     ctx.lineWidth = 1 * dpr;
     const step = 64 * dpr;
-    const off = (bgT * 4) % step; // slow scroll
+    // offsets accumulate continuously (advanced in drawBiome); changing direction only
+    // changes future velocity, so the pattern never teleports on a biome shift
+    const wrap = (v, m) => ((v % m) + m) % m;
+    const ox = wrap(patOffX, step), oy = wrap(patOffY, step);
     if (type === "grid") {
       ctx.beginPath();
-      for (let x = off; x < w; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
-      for (let y = off; y < h; y += step) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
+      for (let x = ox - step; x < w; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
+      for (let y = oy - step; y < h; y += step) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
       ctx.stroke();
     } else if (type === "dots") {
       const r = 1.6 * dpr;
-      for (let x = off; x < w + step; x += step) for (let y = off; y < h + step; y += step) {
+      for (let x = ox - step; x < w + step; x += step) for (let y = oy - step; y < h + step; y += step) {
         ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283185); ctx.fill();
       }
     } else if (type === "rings") {
-      const cx = w / 2, cy = h / 2, max = Math.hypot(w, h);
+      const max = Math.hypot(w, h); // centre wanders continuously so the expansion reset never reads as a snap
+      const cx = w / 2 + Math.sin(patOffX * 0.004) * w * 0.14, cy = h / 2 + Math.cos(patOffY * 0.004) * h * 0.14;
       ctx.beginPath();
-      for (let rad = (bgT * 6) % (step * 1.6) + 8; rad < max; rad += step * 1.6) { ctx.moveTo(cx + rad, cy); ctx.arc(cx, cy, rad, 0, 6.283185); }
+      for (let rad = (bgT * 6) % (step * 1.6) + 8; rad < max + step; rad += step * 1.6) { ctx.moveTo(cx + rad, cy); ctx.arc(cx, cy, rad, 0, 6.283185); }
       ctx.stroke();
     } else if (type === "diag") {
-      const gap = step * 1.4;
+      const gap = step * 1.4, od = wrap(patOffX + patOffY, gap);
       ctx.beginPath();
-      for (let x = -h + (off * 2); x < w; x += gap) { ctx.moveTo(x, 0); ctx.lineTo(x + h, h); }
+      for (let x = -h + od - gap; x < w; x += gap) { ctx.moveTo(x, 0); ctx.lineTo(x + h, h); }
       ctx.stroke();
     } else if (type === "weave") { // cross-hatch (both diagonals)
-      const gap = step * 1.4;
+      const gap = step * 1.4, od = wrap(patOffX + patOffY, gap);
       ctx.beginPath();
-      for (let x = -h + (off * 2); x < w; x += gap) { ctx.moveTo(x, 0); ctx.lineTo(x + h, h); ctx.moveTo(x + h, 0); ctx.lineTo(x, h); }
+      for (let x = -h + od - gap; x < w; x += gap) { ctx.moveTo(x, 0); ctx.lineTo(x + h, h); ctx.moveTo(x + h, 0); ctx.lineTo(x, h); }
       ctx.stroke();
     } else if (type === "cross") { // small plus marks on a grid
       const s = 5 * dpr;
-      for (let x = off; x < w + step; x += step) for (let y = off; y < h + step; y += step) {
+      for (let x = ox - step; x < w + step; x += step) for (let y = oy - step; y < h + step; y += step) {
         ctx.beginPath(); ctx.moveTo(x - s, y); ctx.lineTo(x + s, y); ctx.moveTo(x, y - s); ctx.lineTo(x, y + s); ctx.stroke();
       }
-    } else if (type === "wave") { // horizontal sine bands
-      for (let y = step; y < h; y += step) {
+    } else if (type === "wave") { // sine bands drifting vertically with the biome direction
+      for (let y = oy - step; y < h + step; y += step) {
         ctx.beginPath();
         for (let x = 0; x <= w; x += 12 * dpr) {
           const yy = y + Math.sin(x / (90 * dpr) + bgT * 0.4 + y) * 10 * dpr;
@@ -1475,8 +2171,8 @@
       }
     } else if (type === "hex") { // staggered dot lattice
       const r = 1.7 * dpr; let row = 0;
-      for (let y = off; y < h + step; y += step * 0.86) {
-        const xo = (row % 2) * step / 2 + off;
+      for (let y = oy - step; y < h + step; y += step * 0.86) {
+        const xo = (row % 2) * step / 2 + ox - step;
         for (let x = xo; x < w + step; x += step) { ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283185); ctx.fill(); }
         row++;
       }
@@ -1486,17 +2182,14 @@
   let bgT = 0;
   function drawBiome() {
     bgT += 0.016; // own clock so the wash animates even on menus
+    patOffX += Math.cos(patternDir) * 0.5; patOffY += Math.sin(patternDir) * 0.5; // steady pattern drift
     if (biomeFade < 1 && prevBiome) paintBiome(prevBiome, 1 - biomeFade);
     const f = biomeFade < 1 ? biomeFade : 1;
     paintBiome(biome, f);
     // patterns slowly breathe in and out on top of the wash
-    const pb = Math.max(0, Math.sin(bgT * 0.09));
+    const pb = 0.5 + 0.4 * Math.sin(bgT * 0.09); // always present (0.1–0.9), no longer fully fading out
     if (biomeFade < 1 && prevBiome) paintPattern(prevPattern, (1 - biomeFade) * pb);
     paintPattern(pattern, f * pb);
-    // time-of-day: darken the whole field at night (matches the site's day/night)
-    const d = new Date(), hour = d.getHours() + d.getMinutes() / 60;
-    const night = 0.8 * (1 - Math.max(0, Math.sin(((hour - 6) / 12) * Math.PI)));
-    if (night > 0.01) { ctx.fillStyle = `rgba(4,3,12,${night * 0.5})`; ctx.fillRect(0, 0, w, h); }
   }
 
   // transient wave/level title + small persistent progress label (non-classic modes)
@@ -1504,18 +2197,101 @@
     if (mode === "classic" || !running) return;
     ctx.save();
     ctx.textAlign = "center";
-    const label = mode === "waves"
-      ? "WAVE " + wave + (biome ? "  ·  " + biome.name : "")
-      : (journeyIdx + 1) + "/" + JOURNEY.length + "  ·  " + (JOURNEY[journeyIdx] ? JOURNEY[journeyIdx].name : "");
-    ctx.font = `600 ${13 * uiScale}px "General Sans", system-ui, sans-serif`;
-    ctx.fillStyle = "rgba(255,255,255,0.45)";
-    ctx.fillText(label.toUpperCase(), w / 2, 58 * dpr); // just below the HUD row (score)
+    if (mode === "arena") {
+      // bottom-centred stack: HP hearts, weapon icon+name, stat line, active buff chips (clears the pause btn)
+      const cx = w / 2;
+      // hearts
+      const hs = 20 * dpr, hy = h - 140 * dpr, x0 = cx - (playerMaxHp - 1) * hs / 2;
+      ctx.font = `${16 * uiScale}px system-ui, sans-serif`;
+      for (let i = 0; i < playerMaxHp; i++) {
+        const lost = i >= playerHp;
+        ctx.fillStyle = lost ? "rgba(255,255,255,0.25)" : "rgba(255,90,120,0.95)";
+        ctx.fillText(lost ? "♡" : "♥", x0 + i * hs, hy);
+      }
+      // weapon icon + name + level (icon in the weapon's colour)
+      const wc = WEAPON_COLOR[weapon] || "150,255,210", glyph = WEAPON_GLYPH[weapon] || "»";
+      const name = WEAPONS[weapon].name.toUpperCase() + "  Lv" + weaponLvl + (fireHold ? "  · CEASEFIRE" : "");
+      const iconFont = `700 ${19 * uiScale}px "General Sans", system-ui, sans-serif`;
+      const nameFont = `700 ${15 * uiScale}px "General Sans", system-ui, sans-serif`;
+      ctx.font = iconFont; const iconW = ctx.measureText(glyph).width;
+      ctx.font = nameFont; const nameW = ctx.measureText(name).width;
+      const igap = 9 * dpr, sx = cx - (iconW + igap + nameW) / 2;
+      ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+      ctx.font = iconFont; ctx.fillStyle = `rgba(${wc},0.95)`;
+      ctx.shadowColor = `rgba(${wc},0.7)`; ctx.shadowBlur = 8 * dpr;
+      ctx.fillText(glyph, sx, h - 110 * dpr);
+      ctx.shadowBlur = 0;
+      ctx.font = nameFont; ctx.fillStyle = "rgba(255,255,255,0.78)";
+      ctx.fillText(name, sx + iconW + igap, h - 110 * dpr);
+      ctx.textAlign = "center";
+      // stat line — derived from the current level
+      const ws = weaponStats();
+      const extra = weapon === "spread" ? `${ws.count}× pellet` : weapon === "wave" ? `${ws.waves}× wave` : weapon === "homing" ? `${ws.count}× seek` : weapon === "ricochet" ? "ricochet" : ws.count > 1 ? `${ws.count}× shot` : "";
+      const stats = `DMG ${ws.dmg.toFixed(1)} · ${(1 / ws.gap).toFixed(1)}/s` + (extra ? ` · ${extra}` : "");
+      ctx.font = `600 ${11 * uiScale}px "General Sans", system-ui, sans-serif`;
+      ctx.fillStyle = "rgba(255,255,255,0.42)";
+      ctx.fillText(stats, cx, h - 92 * dpr);
+      // buffs
+      const active = [];
+      if (shieldActive) active.push(["SHIELD", "150,225,255"]);
+      if (elapsed < frozenUntil) active.push(["FREEZE", "190,240,255"]);
+      if (buffs.frenzy > elapsed) active.push(["FRENZY", "255,106,213"]);
+      if (buffs.power > elapsed) active.push(["POWER", "255,138,96"]);
+      if (buffs.bounce > elapsed) active.push(["BOUNCE", "120,255,190"]);
+      if (buffs.overdrive > elapsed) active.push(["OVERDRIVE", "120,255,255"]);
+      if (active.length) {
+        ctx.font = `700 ${11 * uiScale}px "General Sans", system-ui, sans-serif`;
+        const gap = ctx.measureText("   ").width;
+        const widths = active.map((a) => ctx.measureText(a[0]).width);
+        let bx = cx - (widths.reduce((s, x) => s + x, 0) + gap * (active.length - 1)) / 2;
+        ctx.textAlign = "left";
+        for (let i = 0; i < active.length; i++) {
+          ctx.fillStyle = `rgba(${active[i][1]},0.9)`;
+          ctx.fillText(active[i][0], bx, h - 74 * dpr);
+          bx += widths[i] + gap;
+        }
+        ctx.textAlign = "center";
+      }
+      // weapon table — every weapon, its icon + stored level; current one marked
+      const order = ["dart", "spread", "rapid", "homing", "ricochet", "mortar", "wave"];
+      const tx = 22 * dpr, rh = 24 * dpr;
+      let ty = h * 0.5 - (order.length * rh) / 2;
+      ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      for (const k of order) {
+        const lvl = weaponLvls[k] || 0, owned = lvl > 0, cur = k === weapon;
+        const col = WEAPON_COLOR[k] || "200,200,200";
+        ctx.font = `700 ${17 * uiScale}px "General Sans", system-ui, sans-serif`;
+        ctx.fillStyle = `rgba(${col},${cur ? 1 : owned ? 0.75 : 0.3})`;
+        ctx.fillText(WEAPON_GLYPH[k] || "»", tx, ty);
+        ctx.font = `600 ${11 * uiScale}px "General Sans", system-ui, sans-serif`;
+        ctx.fillStyle = `rgba(255,255,255,${cur ? 0.92 : owned ? 0.6 : 0.3})`;
+        ctx.fillText(WEAPONS[k].name + (owned ? "  Lv" + lvl : ""), tx + 22 * dpr, ty);
+        ty += rh;
+      }
+      ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    } else {
+      const label = mode === "waves"
+        ? "WAVE " + wave + (biome ? "  ·  " + biome.name : "")
+        : (journeyIdx + 1) + "/" + JOURNEY.length + "  ·  " + (JOURNEY[journeyIdx] ? JOURNEY[journeyIdx].name : "");
+      ctx.font = `600 ${13 * uiScale}px "General Sans", system-ui, sans-serif`;
+      ctx.fillStyle = "rgba(255,255,255,0.55)";
+      // desktop: bottom-centre, well above the pause button (matches arena). mobile: keep
+      // it up top below the HUD — bottom gets too busy next to the pause button + thumb.
+      ctx.fillText(label.toUpperCase(), w / 2, MOBILE ? 58 * dpr : h - 92 * dpr);
+    }
     if (banner && elapsed < banner.until) {
       const k = Math.min(1, (banner.until - elapsed) / 0.5, (elapsed - (banner.until - 2.4)) / 0.4 + 0.0001);
       const a = Math.max(0, Math.min(1, k));
-      ctx.fillStyle = `rgba(255,255,255,${a})`;
       ctx.font = `700 ${44 * uiScale}px "Clash Display", system-ui, sans-serif`;
+      if (mode === "arena") { // rainbow sweep for the BULLET HELL title
+        const tw = ctx.measureText(banner.big).width;
+        const g = ctx.createLinearGradient(w / 2 - tw / 2, 0, w / 2 + tw / 2, 0);
+        for (let s = 0; s <= 6; s++) g.addColorStop(s / 6, `hsla(${(s * 60 + elapsed * 120) % 360},100%,65%,${a})`);
+        ctx.fillStyle = g;
+        ctx.shadowColor = `hsla(${(elapsed * 120) % 360},100%,60%,${a * 0.7})`; ctx.shadowBlur = 22 * dpr;
+      } else ctx.fillStyle = `rgba(255,255,255,${a})`;
       ctx.fillText(banner.big, w / 2, h * 0.42);
+      ctx.shadowBlur = 0;
       if (banner.sub) {
         ctx.font = `600 ${18 * uiScale}px "General Sans", system-ui, sans-serif`;
         ctx.fillStyle = `rgba(200,220,255,${a * 0.85})`;
@@ -1590,14 +2366,14 @@
           return dx * dx + dy * dy > r2;
         });
         const killed = before - hunters.length;
-        if (killed) { points += killed * KILL_VAL; ptsEl.textContent = String(points); }
+        if (killed) { points += killed * KILL_VAL; showPts(); }
         // the wave also destroys any boss it reaches → pops into a swarm + bonus
         for (let bi = bosses.length - 1; bi >= 0; bi--) {
           const b = bosses[bi];
           const dx = b.x - s.x, dy = b.y - s.y;
           if (dx * dx + dy * dy <= r2) {
             popInto(b.x, b.y, b.color, 8);
-            points += BOSS_VAL; ptsEl.textContent = String(points);
+            points += BOSS_VAL; showPts();
             shocks.push({ x: b.x, y: b.y, t: 0, max: 200 * dpr });
             bosses.splice(bi, 1);
           }
@@ -1642,16 +2418,15 @@
     }
 
     // boss
-    for (const b of bosses) drawBoss(b);
+    for (const b of bosses) { drawBossTelegraph(b); drawBoss(b); if (b.maxHp) drawBossHealth(b); }
 
     // boss shots — bright menacing darts in the boss's colour
     if (enemyBullets.length) {
       ctx.save();
-      ctx.lineCap = "round";
+      ctx.lineCap = "round"; ctx.lineWidth = 4 * dpr; // no per-bullet shadowBlur (boss spam = many)
       for (const eb of enemyBullets) {
         const s = Math.hypot(eb.vx, eb.vy) || 1, ux = eb.vx / s, uy = eb.vy / s, len = 13 * dpr;
-        ctx.strokeStyle = `rgba(${eb.color},0.95)`; ctx.lineWidth = 4 * dpr;
-        ctx.shadowColor = `rgba(${eb.color},0.9)`; ctx.shadowBlur = 12 * dpr;
+        ctx.strokeStyle = `rgba(${eb.color},0.95)`;
         ctx.beginPath(); ctx.moveTo(eb.x, eb.y); ctx.lineTo(eb.x - ux * len, eb.y - uy * len); ctx.stroke();
       }
       ctx.restore(); ctx.shadowBlur = 0;
@@ -1675,17 +2450,103 @@
     // slow powerup
     if (slowmo) { slowmo.t += 0.03; drawSlow(slowmo.x, slowmo.y, slowmo.t); }
 
-    // darts in flight
+    // arena weapon + buff pickups (fade out as they near their despawn time)
+    if (weaponPickup) { weaponPickup.t += 0.05; const a = pickupAlpha(weaponPickup); drawWeaponPickup(weaponPickup.x, weaponPickup.y, weaponPickup.t, weaponPickup.kind, a); }
+    if (buffPickup) { buffPickup.t += 0.05; const a = pickupAlpha(buffPickup); drawBuffPickup(buffPickup.x, buffPickup.y, buffPickup.t, buffPickup.kind, a); }
+
+    // darts/projectiles in flight — coloured per weapon; Lv10 turns them rainbow
     if (bullets.length) {
       ctx.save();
-      ctx.strokeStyle = "rgba(150,255,210,0.95)";
-      ctx.lineWidth = 3 * dpr; ctx.lineCap = "round";
-      ctx.shadowColor = "rgba(120,255,190,0.9)"; ctx.shadowBlur = 10 * dpr;
+      ctx.lineCap = "round"; // no per-bullet shadowBlur — far cheaper with hundreds in flight
       for (const bl of bullets) {
-        const s = Math.hypot(bl.vx, bl.vy) || 1, ux = bl.vx / s, uy = bl.vy / s, len = 11 * dpr;
-        ctx.beginPath(); ctx.moveTo(bl.x, bl.y); ctx.lineTo(bl.x - ux * len, bl.y - uy * len); ctx.stroke();
+        const br = bl.r || 5 * dpr;
+        const base = bl.col || "150,255,210";
+        const hue = (elapsed * 320 + bl.x * 0.5 + bl.y * 0.5) % 360;
+        const solid = bl.rainbow ? `hsl(${hue},100%,65%)` : `rgba(${base},0.96)`;
+        const faint = bl.rainbow ? `hsla(${hue},100%,65%,0.22)` : `rgba(${base},0.22)`;
+        const s = Math.hypot(bl.vx, bl.vy) || 1, ux = bl.vx / s, uy = bl.vy / s, px = -uy, py = ux;
+        // motion trail — one faint elongated streak behind the head (cheap, no history buffer)
+        ctx.strokeStyle = faint; ctx.lineWidth = br * 1.5;
+        ctx.beginPath(); ctx.moveTo(bl.x, bl.y); ctx.lineTo(bl.x - ux * br * 5, bl.y - uy * br * 5); ctx.stroke();
+        ctx.strokeStyle = solid; ctx.fillStyle = solid;
+        const k = bl.kind;
+        if (k === "homing") {                       // round seeker orb + short tail
+          ctx.lineWidth = br * 0.6; ctx.beginPath(); ctx.moveTo(bl.x, bl.y); ctx.lineTo(bl.x - ux * br * 2.6, bl.y - uy * br * 2.6); ctx.stroke();
+          ctx.beginPath(); ctx.arc(bl.x, bl.y, br * 0.95, 0, 6.283185); ctx.fill();
+        } else if (k === "spread") {                 // small round pellet
+          ctx.beginPath(); ctx.arc(bl.x, bl.y, br * 0.95, 0, 6.283185); ctx.fill();
+        } else if (k === "ricochet") {               // spinning diamond
+          ctx.beginPath();
+          ctx.moveTo(bl.x + ux * br * 1.4, bl.y + uy * br * 1.4);
+          ctx.lineTo(bl.x + px * br, bl.y + py * br);
+          ctx.lineTo(bl.x - ux * br * 1.4, bl.y - uy * br * 1.4);
+          ctx.lineTo(bl.x - px * br, bl.y - py * br);
+          ctx.closePath(); ctx.fill();
+        } else if (k === "rapid") {                  // short thick dash
+          ctx.lineWidth = br * 1.1; ctx.beginPath(); ctx.moveTo(bl.x + ux * br, bl.y + uy * br); ctx.lineTo(bl.x - ux * br * 1.6, bl.y - uy * br * 1.6); ctx.stroke();
+        } else if (k === "mortar") {                 // heavy round bomb with a ring
+          ctx.beginPath(); ctx.arc(bl.x, bl.y, br, 0, 6.283185); ctx.fill();
+          ctx.lineWidth = 1.6 * dpr; ctx.beginPath(); ctx.arc(bl.x, bl.y, br * 1.5, 0, 6.283185); ctx.stroke();
+        } else {                                     // dart / default — streak + arrowhead
+          const len = Math.max(11 * dpr, br * 2.2);
+          ctx.lineWidth = Math.max(3 * dpr, br * 0.7);
+          ctx.beginPath(); ctx.moveTo(bl.x, bl.y); ctx.lineTo(bl.x - ux * len, bl.y - uy * len); ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(bl.x + ux * br * 1.4, bl.y + uy * br * 1.4);
+          ctx.lineTo(bl.x + px * br * 0.8 - ux * br * 0.6, bl.y + py * br * 0.8 - uy * br * 0.6);
+          ctx.lineTo(bl.x - px * br * 0.8 - ux * br * 0.6, bl.y - py * br * 0.8 - uy * br * 0.6);
+          ctx.closePath(); ctx.fill();
+        }
       }
       ctx.restore(); ctx.shadowBlur = 0;
+    }
+
+    // Wave crescents — bright expanding arcs sweeping out from the player
+    if (arcs.length) {
+      ctx.save(); ctx.lineCap = "round";
+      for (const ar of arcs) {
+        if (ar.age < 0) continue;
+        const rad = ar.age * ar.spd, a = Math.max(0, 1 - rad / ar.maxR);
+        const stroke = ar.rainbow ? `hsl(${(elapsed * 320 + rad) % 360},100%,66%)` : `rgba(199,116,232,${0.45 + 0.45 * a})`;
+        ctx.strokeStyle = stroke;
+        ctx.shadowColor = ar.rainbow ? stroke : `rgba(199,116,232,${a})`; ctx.shadowBlur = 16 * dpr;
+        ctx.globalAlpha = ar.rainbow ? 0.45 + 0.45 * a : 1;
+        ctx.lineWidth = ar.band * 1.3;
+        ctx.beginPath(); ctx.arc(ar.x, ar.y, rad, ar.ang - ar.half, ar.ang + ar.half); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+      ctx.restore(); ctx.shadowBlur = 0;
+    }
+
+    // arena aim reticle (cursor is hidden mid-run) — dims to a ring during ceasefire
+    if (mode === "arena" && running && playerAlpha > 0.3) {
+      const rr = 9 * dpr, a = fireHold ? 0.35 : 0.9;
+      ctx.save();
+      ctx.strokeStyle = `rgba(150,255,210,${a})`; ctx.lineWidth = 2 * dpr; ctx.lineCap = "round";
+      ctx.shadowColor = "rgba(120,255,190,0.8)"; ctx.shadowBlur = 8 * dpr;
+      ctx.beginPath(); ctx.arc(aimX, aimY, rr, 0, 6.283185); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(aimX - rr * 1.7, aimY); ctx.lineTo(aimX - rr * 0.6, aimY);
+      ctx.moveTo(aimX + rr * 0.6, aimY); ctx.lineTo(aimX + rr * 1.7, aimY);
+      ctx.moveTo(aimX, aimY - rr * 1.7); ctx.lineTo(aimX, aimY - rr * 0.6);
+      ctx.moveTo(aimX, aimY + rr * 0.6); ctx.lineTo(aimX, aimY + rr * 1.7);
+      ctx.stroke();
+      ctx.restore(); ctx.shadowBlur = 0;
+    }
+
+    // edge flash — amber for boss-incoming, red for hits; at 1 HP a red glow stays on
+    const edgeWash = (col, a) => {
+      const v = ctx.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.36, w / 2, h / 2, Math.max(w, h) * 0.62);
+      v.addColorStop(0, `rgba(${col},0)`); v.addColorStop(1, `rgba(${col},${a})`);
+      ctx.fillStyle = v; ctx.fillRect(0, 0, w, h);
+    };
+    if (elapsed < flashUntil) { // gentle fade in then out across the warning window
+      const k = Math.max(0, Math.min(1, (elapsed - flashFrom) / 0.3, (flashUntil - elapsed) / 0.45));
+      edgeWash(flashCol, k * (0.34 + 0.28 * Math.abs(Math.sin(elapsed * 7))));
+    }
+    if (mode === "arena" && running && playerHp === 1) { // eases in over ~0.6s, steady gentle pulse
+      const k = Math.max(0, Math.min(1, (elapsed - lowHpFrom) / 0.6));
+      edgeWash("255,40,60", k * (0.22 + 0.12 * Math.sin(elapsed * 4)));
     }
 
     // frozen-time tint + frost vignette
@@ -1732,11 +2593,29 @@
     ctx.beginPath(); ctx.arc(player.x, player.y, pr * 3.2, 0, 6.283185); ctx.fill();
     ctx.fillStyle = "rgba(255,255,255,0.98)";
     ctx.beginPath(); ctx.arc(player.x, player.y, pr, 0, 6.283185); ctx.fill();
-    // shield ring
+    // shield ring (pickup shield)
     if (shieldActive) {
       ctx.lineWidth = 2.5 * dpr;
       ctx.strokeStyle = `rgba(150,225,255,${0.6 + 0.3 * Math.sin(elapsed * 6)})`;
       ctx.beginPath(); ctx.arc(player.x, player.y, pr * 2.6, 0, 6.283185); ctx.stroke();
+    }
+    // arena recharging shield — solid ring when charged, a filling arc while recharging
+    if (mode === "arena") {
+      const rr = pr * 2.9;
+      if (regenShield) {
+        ctx.lineWidth = 2.5 * dpr;
+        ctx.strokeStyle = `rgba(120,255,210,${0.55 + 0.3 * Math.sin(elapsed * 5)})`;
+        ctx.shadowColor = "rgba(120,255,210,0.8)"; ctx.shadowBlur = 8 * dpr;
+        ctx.beginPath(); ctx.arc(player.x, player.y, rr, 0, 6.283185); ctx.stroke();
+        ctx.shadowBlur = 0;
+      } else {
+        const prog = Math.max(0, Math.min(1, 1 - (regenReadyAt - elapsed) / 4));
+        ctx.lineWidth = 2 * dpr;
+        ctx.strokeStyle = "rgba(120,255,210,0.18)";
+        ctx.beginPath(); ctx.arc(player.x, player.y, rr, 0, 6.283185); ctx.stroke();
+        ctx.strokeStyle = "rgba(120,255,210,0.85)";
+        ctx.beginPath(); ctx.arc(player.x, player.y, rr, -Math.PI / 2, -Math.PI / 2 + prog * 6.283185); ctx.stroke();
+      }
     }
     // armed (shooter) ring — green, with a little aim tick in the travel direction
     if (elapsed < shootUntil) {
@@ -1821,13 +2700,14 @@
   function chooseMode(m) {
     mode = m;
     loadBest();
-    if (mode === "journey") { journeyIdx = 0; startPanel.hidden = true; showPlot(); }
+    if (mode === "journey") { journeyIdx = 0; journeyTime = 0; journeyPts = 0; startPanel.hidden = true; showPlot(); }
+    else if (mode === "arena") { startPanel.hidden = true; arenaStartPanel.hidden = false; } // pick a weapon first
     else start();
   }
   // return to the mode-select menu from win/over/plot
   function backToMenu() {
     running = false; dead = false; paused = false; celebrating = false; setPauseBtn();
-    overPanel.hidden = true; winPanel.hidden = true; plotPanel.hidden = true; helpPanel.hidden = true;
+    overPanel.hidden = true; winPanel.hidden = true; plotPanel.hidden = true; helpPanel.hidden = true; arenaStartPanel.hidden = true;
     document.body.classList.remove("playing", "paused");
     startPanel.hidden = false;
     mode = "classic"; biome = null; banner = null; loadBest();
@@ -1848,18 +2728,60 @@
     setPauseBtn();
   }
 
+  let muted = false;
   const muteLabel = (m) => (m ? "🔇 Muted" : "🔊 Sound on") + (MOBILE ? "" : " (M)");
-  function toggleMute() { audio.resume(); muteEl.textContent = muteLabel(audio.toggleMute()); }
+  function toggleMute() { audio.resume(); muted = audio.toggleMute(); muteEl.textContent = muteLabel(muted); if (muted && window.speechSynthesis) { speechQ = []; window.speechSynthesis.cancel(); } }
   muteEl.textContent = muteLabel(false); // set initial label (drops "(M)" on mobile)
+
+  // Wipeout-style announcer via Web Speech — English female (US first), never male.
+  let ttsVoice = null;
+  const FEMALE = /female|samantha|victoria|zira|karen|tessa|fiona|moira|susan|allison|catherine|serena|veena|sara|nicky|amelie|libby|sonia|aria|ava|emma|jenny|michelle|joanna|salli|kimberly/i;
+  const MALE = /\bmale\b|daniel|arthur|alex|fred|oliver|george|james|aaron|gordon|rishi|david|mark/i;
+  function pickVoice() {
+    const vs = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+    if (!vs.length) return;
+    ttsVoice = vs.find((v) => FEMALE.test(v.name) && /en-GB/i.test(v.lang))
+      || vs.find((v) => /en-GB/i.test(v.lang) && !MALE.test(v.name))
+      || vs.find((v) => FEMALE.test(v.name) && /^en/i.test(v.lang))
+      || vs.find((v) => /^en/i.test(v.lang) && !MALE.test(v.name))
+      || vs.find((v) => FEMALE.test(v.name))
+      || null; // nothing suitable → browser default rather than a male voice
+  }
+  if (window.speechSynthesis) { pickVoice(); window.speechSynthesis.onvoiceschanged = pickVoice; }
+  // queue announcer lines so rapid pickups don't cancel each other mid-word
+  let speechQ = [];
+  function speakNext() {
+    const synth = window.speechSynthesis;
+    if (!synth || !speechQ.length || synth.speaking || synth.pending) return;
+    const text = speechQ.shift();
+    try {
+      const u = new SpeechSynthesisUtterance(text);
+      if (ttsVoice) u.voice = ttsVoice;
+      u.rate = 0.82 + Math.random() * 0.04;  // slower, measured
+      u.pitch = 1.45 + Math.random() * 0.06; // high, bright announcer
+      u.volume = 1;
+      u.onend = u.onerror = () => speakNext();
+      synth.speak(u);
+    } catch { speakNext(); }
+  }
+  function say(text) {
+    if (muted || !window.speechSynthesis) return;
+    if (speechQ.length > 3) speechQ.shift(); // cap backlog so the voice doesn't lag behind play
+    speechQ.push(text);
+    speakNext();
+  }
 
   // controls
   if (pauseBtn) pauseBtn.addEventListener("click", togglePause);
   muteEl.addEventListener("click", toggleMute);
-  document.querySelectorAll(".mode-btn").forEach((b) => b.addEventListener("click", () => chooseMode(b.dataset.mode)));
-  document.getElementById("retry-btn").addEventListener("click", start);
-  document.getElementById("restart-btn").addEventListener("click", () => { journeyIdx = 0; start(); }); // journey from level 1
+  startPanel.querySelectorAll(".mode-btn[data-mode]").forEach((b) => b.addEventListener("click", () => chooseMode(b.dataset.mode)));
+  document.getElementById("retry-btn").addEventListener("click", () => { journeyTime = 0; journeyPts = 0; start(); }); // continue after death → score from zero
+  document.getElementById("restart-btn").addEventListener("click", () => { journeyIdx = 0; journeyTime = 0; journeyPts = 0; start(); }); // journey from level 1
   document.getElementById("plot-begin").addEventListener("click", start);
   document.getElementById("plot-back").addEventListener("click", backToMenu);
+  // bullet hell weapon select
+  arenaStartPanel.querySelectorAll("[data-weapon]").forEach((b) => b.addEventListener("click", () => { mode = "arena"; startWeapon = b.dataset.weapon; start(); }));
+  document.getElementById("arena-back").addEventListener("click", backToMenu);
   document.getElementById("win-menu").addEventListener("click", backToMenu);
   document.getElementById("menu-btn").addEventListener("click", backToMenu);
   document.getElementById("help-btn").addEventListener("click", openHelp);
@@ -1870,6 +2792,7 @@
   addEventListener("keydown", (e) => {
     if (document.activeElement === initialsEl) return; // typing initials → ignore game keys
     if (!helpPanel.hidden) { if (e.key === "Escape" || e.key === "h" || e.key === "H" || e.key === "?") closeHelp(); return; }
+    if (!arenaStartPanel.hidden) { if (e.key === "Escape") backToMenu(); return; }
     if (!plotPanel.hidden) { if (e.key === "Enter" || e.key === " ") start(); else if (e.key === "Escape") backToMenu(); return; }
     if (!winPanel.hidden) { if (e.key === "Enter" || e.key === "Escape") backToMenu(); return; }
     if ((e.key === "h" || e.key === "H" || e.key === "?") && !running) { openHelp(); return; }
@@ -1888,8 +2811,9 @@
     if (!/^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) return;
     const h = location.hash;
     const m = h.match(/level=(\d+)/);
-    if (m) { mode = "journey"; journeyIdx = Math.max(0, Math.min(JOURNEY.length - 1, +m[1] - 1)); loadBest(); startPanel.hidden = true; start(); }
+    if (m) { mode = "journey"; journeyIdx = Math.max(0, Math.min(JOURNEY.length - 1, +m[1] - 1)); journeyTime = 0; journeyPts = 0; loadBest(); startPanel.hidden = true; start(); }
     else if (/waves/.test(h)) { mode = "waves"; loadBest(); startPanel.hidden = true; start(); }
+    else if (/arena/.test(h)) { mode = "arena"; loadBest(); startPanel.hidden = true; start(); }
     else if (/classic/.test(h)) { mode = "classic"; loadBest(); startPanel.hidden = true; start(); }
   })();
 })();

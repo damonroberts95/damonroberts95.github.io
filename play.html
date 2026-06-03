@@ -69,6 +69,12 @@
       text-align: center;
     }
     .panel[hidden] { display: none; }
+    /* scrollbar blends with the page background */
+    .panel { scrollbar-color: var(--muted) var(--bg); scrollbar-width: thin; }
+    .panel::-webkit-scrollbar { width: 12px; }
+    .panel::-webkit-scrollbar-track { background: var(--bg); }
+    .panel::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 999px; border: 3px solid var(--bg); }
+    .panel::-webkit-scrollbar-thumb:hover { background: var(--text); }
     /* margin:auto centres the card when it fits, but yields to scroll-from-top when it doesn't */
     .panel__card { max-width: 460px; margin: auto; }
     .panel h1 {
@@ -146,11 +152,13 @@
     .mode-btn b { font-family: var(--font-display); font-size: 1.05rem; color: var(--text); }
     .mode-btn span { font-size: 0.82rem; color: var(--muted); font-weight: 400; }
     .mode-btn:hover span { color: var(--text); }
+    /* arena is a keyboard+mouse mode — hide on touch / coarse-pointer devices */
+    @media (pointer: coarse) { .mode-btn--desktop { display: none; } }
     /* plot card */
     .plot-stage { font-family: var(--font-display); font-size: 0.74rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
     .lb__status { font-size: 0.78rem; color: var(--muted); }
     /* how-to-play panel */
-    .help { max-width: 420px; margin: 6px auto 0; text-align: left; }
+    .help { max-width: 420px; margin: 14px auto 0; text-align: left; background: rgba(8,7,13,0.72); padding: 18px 22px; border-radius: 14px; border: 1px solid var(--line); }
     .help h2 {
       font-family: var(--font-display); font-weight: 600; font-size: 0.78rem;
       letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted);
@@ -230,8 +238,28 @@
         <button class="btn mode-btn" data-mode="classic"><b>Classic</b><span>Endless. Pure survival — outlast the swarm.</span></button>
         <button class="btn mode-btn" data-mode="waves"><b>Waves</b><span>Themed waves of one colour, a boss every 5th.</span></button>
         <button class="btn mode-btn" data-mode="journey"><b>Journey</b><span>Story levels through the Lattice.</span></button>
+        <button class="btn mode-btn mode-btn--desktop" data-mode="arena"><b>Bullet Hell</b><span>Desktop only. WASD to move, mouse to aim &amp; shoot. Weapons, buffs, bosses.</span></button>
       </div>
       <button class="btn btn--sm btn--ghost" id="help-btn">How to play</button>
+    </div>
+  </div>
+
+  <!-- bullet hell: pick a starting weapon -->
+  <div class="panel" id="arena-start" hidden>
+    <div class="panel__card">
+      <p class="plot-stage">Bullet Hell</p>
+      <h1 style="font-size:clamp(2rem,8vw,3.2rem)">PICK YOUR WEAPON</h1>
+      <p class="big">Grab more of the same kind mid-run to level it up. All five drop as you play.</p>
+      <div class="modes">
+        <button class="btn mode-btn" data-weapon="dart"><b>Dart</b><span>Fast single shot. High damage — best vs bosses.</span></button>
+        <button class="btn mode-btn" data-weapon="spread"><b>Spread</b><span>Shotgun fan. More pellets &amp; wider as it levels.</span></button>
+        <button class="btn mode-btn" data-weapon="rapid"><b>Rapid</b><span>Bullet hose. Low damage, huge fire rate.</span></button>
+        <button class="btn mode-btn" data-weapon="homing"><b>Seeker</b><span>Curves toward the nearest target. More seekers at higher levels.</span></button>
+        <button class="btn mode-btn" data-weapon="ricochet"><b>Ricochet</b><span>Bullets bounce off the walls. Hits from odd angles.</span></button>
+        <button class="btn mode-btn" data-weapon="mortar"><b>Missile</b><span>Lobs that explode on impact — area damage. Bigger blast at higher levels.</span></button>
+        <button class="btn mode-btn" data-weapon="wave"><b>Wave</b><span>Crescent shockwaves from you. Extra waves at higher levels.</span></button>
+      </div>
+      <button class="btn btn--sm btn--ghost" id="arena-back">Back</button>
     </div>
   </div>
 
@@ -308,9 +336,18 @@
           <li><span class="ic">❄</span><span><b>Freeze</b> — freezes all nodes for a few seconds (their webs still kill).</span></li>
           <li><span class="ic">⬡</span><span><b>Shield</b> — absorbs one hit and shoves the swarm away.</span></li>
           <li><span class="ic">»</span><span><b>Shooter</b> — auto-fires darts in your direction of travel for a few seconds, destroying nodes.</span></li>
-          <li><span class="ic">↺</span><span><b>Slow</b> — rare (Classic). A rewind clock that winds the swarm's speed back a few seconds.</span></li>
+          <li><span class="ic">↺</span><span><b>Slow</b> — rare, Classic only. A rewind clock that rolls the swarm's speed ramp back a few seconds (their size and numbers keep climbing).</span></li>
           <li><span class="ic">◉</span><span><b>Boss</b> — the big spiked eye. It takes on the personality of its colour. Catch it in a star-blast to pop it into a swarm of its own colour (+50).</span></li>
         </ul>
+
+        <h2>Bullet Hell <span class="note" style="font-weight:400">(desktop)</span></h2>
+        <ul>
+          <li><span class="ic">⌨</span><span><b>Move</b> with <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>. <b>Aim</b> with the mouse — it autofires; <b>hold click</b> to hold fire.</span></li>
+          <li><span class="ic">»</span><span><b>Weapon drops</b> — Spread, Rapid, Seeker, Ricochet, Missile, Wave. Grab the <b>same kind again</b> to level it up (bigger bullets, more pellets/seekers, bigger blasts, higher damage &amp; fire rate). Each kind keeps its own level.</span></li>
+          <li><span class="ic">✦</span><span><b>Buffs</b> — Shield, Frenzy (fire rate), Power (pierce + size), Bounce (ricochet off walls), Freeze, ♥ Heal (restore a life), ▲ Level Up (bump your current weapon a level), and ★ Overdrive (temporary +10 levels). You also have a shield that recharges every 4s.</span></li>
+          <li><span class="ic">◉</span><span><b>Bosses</b> come in five types — Spiral, Burst, Charger, Splitter, Weaver — picked at random, each with a circular health ring and a glow that tells when they're about to fire or charge.</span></li>
+        </ul>
+        <p class="note">Pickups fade out if you leave them too long. Score is survival time + points.</p>
 
         <h2 class="kbd-hint">Keys</h2>
         <p class="note kbd-hint"><kbd>M</kbd> mute &middot; <kbd>R</kbd> retry &middot; <kbd>Esc</kbd> back to site</p>
