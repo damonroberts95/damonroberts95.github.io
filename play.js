@@ -494,7 +494,7 @@
     homing: { name: "Seeker", gap: 0.30, spd: 560, r: 6,  count: 1, spread: 0,    pierce: 0, dmg: 2.4, homing: true },
     ricochet:{ name: "Ricochet", gap: 0.32, spd: 660, r: 5, count: 1, spread: 0,  pierce: 1, dmg: 3.2, homing: false, bounce: true },
     mortar: { name: "Missile", gap: 0.5,  spd: 540, r: 4, count: 1, spread: 0,    pierce: 0, dmg: 5.5, homing: true, explode: true, turn: 1.6 },
-    wave:   { name: "Wave",   gap: 0.46, spd: 470, r: 6, count: 1, spread: 0,    pierce: 8, dmg: 3, homing: false },
+    wave:   { name: "Wave",   gap: 0.46, spd: 400, r: 6, count: 1, spread: 0,    pierce: 8, dmg: 3, homing: false },
   };
   const WEAPON_KINDS = ["dart", "spread", "rapid", "homing", "ricochet", "mortar", "wave"]; // droppable weapon kinds
   const BUFF_KINDS = ["shield", "frenzy", "power", "bounce", "freeze", "heal", "levelup", "overdrive", "blade", "dual", "starbomb"];
@@ -545,13 +545,13 @@
       // a crescent made of discrete fat segments fanned across an arc — each segment is
       // its own projectile (absorbed after a pierce or two, and bounces with the buff).
       // The fan visibly shows the firing angle; arc width + segment count grow with level.
-      const wspd = ws.spd * dpr * arenaScale, half = Math.min(0.8, 0.38 + (lvl - 1) * 0.035);
-      const segs = 5 + Math.floor(lvl * 0.7);
+      const wspd = ws.spd * dpr * arenaScale, half = Math.min(1.1, 0.55 + (lvl - 1) * 0.045);
+      const segs = 7 + Math.floor(lvl * 0.9);
       const wr = (5 + ws.r * 0.6) * (power ? 1.3 : 1) * dpr;
       const wPierce = 1 + Math.floor(lvl / 4) + (power ? 2 : 0); // absorbed after 1–2 hits (more late / w/ Power)
       for (let k = 0; k < segs; k++) {
         const a = base + (segs === 1 ? 0 : (k / (segs - 1) - 0.5) * 2 * half);
-        bullets.push({ x: player.x, y: player.y, vx: Math.cos(a) * wspd, vy: Math.sin(a) * wspd, life: bounce ? 2.0 : 1.0, r: wr, pierce: wPierce, dmg, bounce, knock, spd: wspd, col: wcol, kind: "wave", rainbow: maxed, hitB: null });
+        bullets.push({ x: player.x, y: player.y, vx: Math.cos(a) * wspd, vy: Math.sin(a) * wspd, life: bounce ? 2.3 : 1.25, r: wr, pierce: wPierce, dmg, bounce, knock, spd: wspd, col: wcol, kind: "wave", rainbow: maxed, hitB: null });
       }
     } else {
       const homing = WEAPONS[wk].homing, n = ws.count, fan = ws.spread || (n > 1 ? 0.12 : 0), angles = [];
