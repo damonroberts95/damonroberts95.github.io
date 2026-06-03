@@ -497,7 +497,7 @@
     wave:   { name: "Wave",   gap: 0.46, spd: 400, r: 6, count: 1, spread: 0,    pierce: 8, dmg: 3, homing: false },
   };
   const WEAPON_KINDS = ["dart", "spread", "rapid", "homing", "ricochet", "mortar", "wave"]; // droppable weapon kinds
-  const BUFF_KINDS = ["shield", "frenzy", "power", "bounce", "freeze", "heal", "levelup", "overdrive", "blade", "dual", "starbomb"];
+  const BUFF_KINDS = ["shield", "frenzy", "power", "bounce", "freeze", "heal", "heal", "heal", "levelup", "overdrive", "blade", "dual", "starbomb"]; // heal weighted up (spawns more)
   const ARENA_BOSSES = ["spiral", "burst", "charger", "splitter", "weaver"];
 
   // effective weapon stats for the current kind + level. Each level: bigger bullets,
