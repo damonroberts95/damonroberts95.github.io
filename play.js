@@ -708,12 +708,12 @@
     if (k === "shield") { buffs.shield = elapsed + 9; audio.setShield(true); audio.sfx("shield"); }
     else if (k === "freeze") { frozenUntil = elapsed + 4; audio.sfx("freeze"); shocks.push({ x, y, t: 0, max: 320 * dpr, ice: true }); }
     else if (k === "heal") { playerHp = Math.min(playerMaxHp, playerHp + 1); audio.sfx("shield"); }
-    else if (k === "levelup") { weaponLvls[weapon] = weaponLvl + 1; weaponLvl = weaponLvls[weapon]; audio.sfx("blast"); }
+    else if (k === "levelup") { weaponLvls[weapon] = weaponLvl + 1; weaponLvl = weaponLvls[weapon]; audio.sfx("blast"); say(WEAPONS[weapon].name + ", level " + weaponLvl); }
     else if (k === "dual") { const pool = WEAPON_KINDS.filter((x2) => x2 !== weapon); dualWeapon = pool[(Math.random() * pool.length) | 0]; buffs.dual = elapsed + 11; nextDual = 0; audio.sfx("blast"); }
     else if (k === "starbomb") { starBlast(); }
     else if (k === "repel") { buffs.repel = elapsed + 8; audio.sfx("freeze"); shocks.push({ x: player.x, y: player.y, t: 0, max: 460 * dpr, shield: true }); } // timed keep-away field
     else { buffs[k] = elapsed + 9; audio.sfx("blast"); } // frenzy / power / bounce
-    say(BUFF_NAME[k] || k);
+    if (k !== "levelup") say(BUFF_NAME[k] || k); // levelup already announced weapon + new level
     shocks.push({ x, y, t: 0, max: 130 * dpr, shield: true });
   }
 
@@ -778,7 +778,7 @@
     pickBiome(true, false); scheduleBiomeShift();
     banner = { big: "BULLET HELL", sub: "WASD to move · autofires at your aim", until: 3.2 };
     nextCluster = 6 + Math.random() * 4;
-    say("Bullet hell");
+    say("Bullet hell"); say(WEAPONS[startWeapon].name);
   }
 
   const BOSS_VAL = 50; // points for destroying the boss
