@@ -1253,11 +1253,11 @@
     if (mode === "arena") {
       if (!regenShield && elapsed >= regenReadyAt) regenShield = true; // shield finished recharging
       if (buffs.shield > 0 && buffs.shield <= elapsed) { audio.setShield(false); buffs.shield = 0; } // timed shield ended → music back to normal
-      if (buffs.repel > elapsed) { // keep-away field: hard-hold every node outside a clear bubble
-        const fieldR = 300 * dpr * arenaScale;
+      if (buffs.repel > elapsed) { // keep-away field: firmly but smoothly push nodes out of a bubble
+        const fieldR = 185 * dpr * arenaScale;
         for (const hn of hunters) {
           const dx = hn.x - player.x, dy = hn.y - player.y, d = Math.hypot(dx, dy) || 1;
-          if (d < fieldR) { const ux = dx / d, uy = dy / d; hn.x = player.x + ux * fieldR; hn.y = player.y + uy * fieldR; hn.vx = ux * 200 * dpr; hn.vy = uy * 200 * dpr; }
+          if (d < fieldR) { const ux = dx / d, uy = dy / d; hn.kvx = (hn.kvx || 0) + ux * 1100 * dpr * dt; hn.kvy = (hn.kvy || 0) + uy * 1100 * dpr * dt; const ease = (fieldR - d) * 0.15; hn.x += ux * ease; hn.y += uy * ease; }
         }
       }
       // weapon drops — several can sit on the field at once
@@ -2627,7 +2627,7 @@
 
     // Repel buff — a glowing keep-away bubble with outward ripples
     if (mode === "arena" && buffs.repel > elapsed && playerAlpha > 0.3) {
-      const fieldR = 300 * dpr * arenaScale;
+      const fieldR = 185 * dpr * arenaScale;
       const g = ctx.createRadialGradient(player.x, player.y, fieldR * 0.45, player.x, player.y, fieldR);
       g.addColorStop(0, "rgba(150,210,255,0)"); g.addColorStop(0.75, "rgba(150,210,255,0.05)"); g.addColorStop(1, "rgba(160,215,255,0.2)");
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(player.x, player.y, fieldR, 0, 6.283185); ctx.fill();
