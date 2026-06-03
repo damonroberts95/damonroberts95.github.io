@@ -474,7 +474,7 @@
   let weaponLvls = { dart: 1 };       // per-kind levels persist across switches within a run
   let startWeapon = "dart";           // chosen on the Bullet Hell weapon-select screen
   let nextWeaponDrop = 0, nextBuffDrop = 0;
-  let weaponPickup = null, buffPickup = null; // {x, y, t, kind, born} — despawn after PICKUP_TTL
+  let weaponPickups = [], buffPickups = []; // {x, y, t, kind, born} — multiple at once, despawn after PICKUP_TTL
   const buffs = { frenzy: 0, power: 0, bounce: 0, overdrive: 0, blade: 0, dual: 0, shield: 0 }; // each holds the elapsed time it expires at
   let dualWeapon = "dart", nextDual = 0; // Dual-wield buff: a second weapon fired alongside the main
   let bladeAng = 0, bladeVel = 0; // melee blade angle + angular velocity (follows mouse w/ momentum; Blade buff)
@@ -497,7 +497,7 @@
     wave:   { name: "Wave",   gap: 0.46, spd: 400, r: 6, count: 1, spread: 0,    pierce: 8, dmg: 3, homing: false },
   };
   const WEAPON_KINDS = ["dart", "spread", "rapid", "homing", "ricochet", "mortar", "wave"]; // droppable weapon kinds
-  const BUFF_KINDS = ["shield", "frenzy", "power", "bounce", "freeze", "heal", "heal", "heal", "levelup", "overdrive", "blade", "dual", "starbomb"]; // heal weighted up (spawns more)
+  const BUFF_KINDS = ["shield", "frenzy", "power", "bounce", "freeze", "heal", "heal", "heal", "levelup", "overdrive", "blade", "dual", "starbomb", "repel"]; // heal weighted up (spawns more)
   const ARENA_BOSSES = ["spiral", "burst", "charger", "splitter", "weaver"];
 
   // effective weapon stats for the current kind + level. Each level: bigger bullets,
@@ -687,8 +687,31 @@
   const hurtNode = (hn, dmg) => { hn.hp -= dmg / (1 + (hn.snb || 0) * 0.12); return hn.hp <= 0; };
   // Power buff damage multiplier — strength grows with the run (duration stays fixed)
   const powerMul = () => 1.5 + Math.min(1.6, elapsed * 0.011);
-  // a slain arena boss has a good chance to drop a Level Up (lands where it died)
-  function bossDrop(x, y) { if (mode === "arena" && Math.random() < 0.5) buffPickup = { x, y, t: 0, kind: "levelup", born: elapsed }; }
+  // arena boss death: burst rings, a shower of point diamonds, and a chance at a Level Up
+  function bossDrop(x, y) {
+    if (mode !== "arena") return;
+    shocks.push({ x, y, t: 0, max: 180 * dpr, rainbow: true });        // extra burst ring
+    shocks.push({ x, y, t: 0, max: 110 * dpr });                        // inner flash
+    if (Math.random() < 0.6) { const n = 3 + ((Math.random() * 5) | 0); for (let i = 0; i < n; i++) gems.push({ x: x + rand(-44, 44) * dpr, y: y + rand(-44, 44) * dpr, t: 0 }); } // point diamonds
+    if (Math.random() < 0.5) buffPickups.push({ x, y, t: 0, kind: "levelup", born: elapsed });
+  }
+
+  // apply a collected buff at (x,y)
+  function applyBuff(k, x, y) {
+    if (k === "shield") { buffs.shield = elapsed + 9; audio.setShield(true); audio.sfx("shield"); }
+    else if (k === "freeze") { frozenUntil = elapsed + 4; audio.sfx("freeze"); shocks.push({ x, y, t: 0, max: 320 * dpr, ice: true }); }
+    else if (k === "heal") { playerHp = Math.min(playerMaxHp, playerHp + 1); audio.sfx("shield"); }
+    else if (k === "levelup") { weaponLvls[weapon] = weaponLvl + 1; weaponLvl = weaponLvls[weapon]; audio.sfx("blast"); }
+    else if (k === "dual") { const pool = WEAPON_KINDS.filter((x2) => x2 !== weapon); dualWeapon = pool[(Math.random() * pool.length) | 0]; buffs.dual = elapsed + 11; nextDual = 0; audio.sfx("blast"); }
+    else if (k === "starbomb") { starBlast(); }
+    else if (k === "repel") { // shove the whole swarm outward (smooth knock-velocity)
+      for (const hn of hunters) { const dx = hn.x - player.x, dy = hn.y - player.y, d = Math.hypot(dx, dy) || 1; const f = (1 - Math.min(1, d / (460 * dpr))) * 1500 * dpr; hn.kvx = (hn.kvx || 0) + (dx / d) * f; hn.kvy = (hn.kvy || 0) + (dy / d) * f; }
+      shocks.push({ x: player.x, y: player.y, t: 0, max: 460 * dpr, shield: true }); audio.sfx("freeze");
+    }
+    else { buffs[k] = elapsed + 9; audio.sfx("blast"); } // frenzy / power / bounce
+    say(BUFF_NAME[k] || k);
+    shocks.push({ x, y, t: 0, max: 130 * dpr, shield: true });
+  }
 
   // Missile explosion — an expanding star-bomb-style shock: the front clears nodes it
   // reaches and chips bosses once (dmg). Handled by the shock-kill pass in drawScene.
@@ -725,7 +748,7 @@
     audio.setShield(false);
     // arena state
     weapon = mode === "arena" ? startWeapon : "dart"; weaponLvl = 1; weaponLvls = { [weapon]: 1 };
-    weaponPickup = null; buffPickup = null;
+    weaponPickups = []; buffPickups = [];
     nextWeaponDrop = 3 + Math.random() * 2; nextBuffDrop = 2.5 + Math.random() * 2;
     arenaKeys.w = arenaKeys.a = arenaKeys.s = arenaKeys.d = false; fireHold = false;
     buffs.frenzy = buffs.power = buffs.bounce = buffs.overdrive = buffs.blade = buffs.dual = buffs.shield = 0; bladeAng = 0; bladeVel = 0; nextDual = 0;
@@ -757,7 +780,7 @@
   const BOSS_VAL = 50; // points for destroying the boss
   function spawnBoss(forceColor, shooter, kind, hp) {
     const edge = (Math.random() * 4) | 0;
-    const m = 90 * dpr; // clear the boss radius + spiked corona so it floats in from off-screen
+    const m = 150 * dpr; // clear the boss radius + corona (charger ram is long) so it floats in from off-screen
     let x, y;
     if (edge === 0) { x = rand(0, w); y = -m; }
     else if (edge === 1) { x = w + m; y = rand(0, h); }
@@ -1218,49 +1241,33 @@
     if (mode === "arena") {
       if (!regenShield && elapsed >= regenReadyAt) regenShield = true; // shield finished recharging
       if (buffs.shield > 0 && buffs.shield <= elapsed) { audio.setShield(false); buffs.shield = 0; } // timed shield ended → music back to normal
-      // weapon drop — same kind as held → level up; new kind → switch (level resets to 1)
-      if (!weaponPickup && elapsed >= nextWeaponDrop) {
-        const kind = WEAPON_KINDS[(Math.random() * WEAPON_KINDS.length) | 0];
-        weaponPickup = { x: rand(w * 0.12, w * 0.88), y: rand(h * 0.14, h * 0.86), t: 0, kind, born: elapsed };
+      // weapon drops — several can sit on the field at once
+      if (weaponPickups.length < 3 && elapsed >= nextWeaponDrop) {
+        weaponPickups.push({ x: rand(w * 0.12, w * 0.88), y: rand(h * 0.14, h * 0.86), t: 0, kind: WEAPON_KINDS[(Math.random() * WEAPON_KINDS.length) | 0], born: elapsed });
+        nextWeaponDrop = elapsed + 4 + Math.random() * 3;
       }
-      if (weaponPickup) {
-        if (elapsed - weaponPickup.born > PICKUP_TTL) { weaponPickup = null; nextWeaponDrop = elapsed + 3 + Math.random() * 2; } // despawn
-        else {
-          const dx = player.x - weaponPickup.x, dy = player.y - weaponPickup.y, reach = STAR_R * 1.6 * dpr + player.r;
-          if (dx * dx + dy * dy < reach * reach) {
-            const pk = weaponPickup.kind;
-            weaponLvls[pk] = (weaponLvls[pk] || 0) + 1; // upgrade that kind (no cap; keeps its own level)
-            weapon = pk; weaponLvl = weaponLvls[pk]; // switch back later → resumes at its stored level
-            audio.sfx("blast"); say(WEAPONS[pk].name + ", level " + weaponLvl); // name, level
-            shocks.push({ x: weaponPickup.x, y: weaponPickup.y, t: 0, max: 130 * dpr, shield: true });
-            weaponPickup = null; nextWeaponDrop = elapsed + 4 + Math.random() * 3;
-          }
+      for (let i = weaponPickups.length - 1; i >= 0; i--) {
+        const wp = weaponPickups[i];
+        if (elapsed - wp.born > PICKUP_TTL) { weaponPickups.splice(i, 1); continue; }
+        const dx = player.x - wp.x, dy = player.y - wp.y, reach = STAR_R * 1.6 * dpr + player.r;
+        if (dx * dx + dy * dy < reach * reach) {
+          const pk = wp.kind;
+          weaponLvls[pk] = (weaponLvls[pk] || 0) + 1; weapon = pk; weaponLvl = weaponLvls[pk];
+          audio.sfx("blast"); say(WEAPONS[pk].name + ", level " + weaponLvl);
+          shocks.push({ x: wp.x, y: wp.y, t: 0, max: 130 * dpr, shield: true });
+          weaponPickups.splice(i, 1);
         }
       }
-      // buff drop — timed power-up (or shield/freeze, which use the shared systems)
-      if (!buffPickup && elapsed >= nextBuffDrop) {
-        const kind = BUFF_KINDS[(Math.random() * BUFF_KINDS.length) | 0];
-        buffPickup = { x: rand(w * 0.12, w * 0.88), y: rand(h * 0.14, h * 0.86), t: 0, kind, born: elapsed };
+      // buff drops — several at once
+      if (buffPickups.length < 3 && elapsed >= nextBuffDrop) {
+        buffPickups.push({ x: rand(w * 0.12, w * 0.88), y: rand(h * 0.14, h * 0.86), t: 0, kind: BUFF_KINDS[(Math.random() * BUFF_KINDS.length) | 0], born: elapsed });
+        nextBuffDrop = elapsed + 4 + Math.random() * 3;
       }
-      if (buffPickup) {
-        if (elapsed - buffPickup.born > PICKUP_TTL) { buffPickup = null; nextBuffDrop = elapsed + 3 + Math.random() * 2; } // despawn
-        else {
-          const dx = player.x - buffPickup.x, dy = player.y - buffPickup.y, reach = STAR_R * 1.6 * dpr + player.r;
-          if (dx * dx + dy * dy < reach * reach) {
-            const k = buffPickup.kind;
-            if (k === "shield") { buffs.shield = elapsed + 9; audio.setShield(true); audio.sfx("shield"); } // lasts the whole duration, not one hit
-            else if (k === "freeze") { frozenUntil = elapsed + 4; audio.sfx("freeze"); shocks.push({ x: buffPickup.x, y: buffPickup.y, t: 0, max: 320 * dpr, ice: true }); }
-            else if (k === "heal") { playerHp = Math.min(playerMaxHp, playerHp + 1); audio.sfx("shield"); } // restore a life
-            else if (k === "levelup") { weaponLvls[weapon] = weaponLvl + 1; weaponLvl = weaponLvls[weapon]; audio.sfx("blast"); } // bump the current weapon a level
-            else if (k === "dual") { const pool = WEAPON_KINDS.filter((x) => x !== weapon); dualWeapon = pool[(Math.random() * pool.length) | 0]; buffs.dual = elapsed + 11; nextDual = 0; audio.sfx("blast"); } // 2nd weapon for a bit
-            else if (k === "starbomb") { starBlast(); } // instant screen-clearing blast wave
-
-            else { buffs[k] = elapsed + 9; audio.sfx("blast"); } // frenzy / power / bounce
-            say(BUFF_NAME[k] || k);
-            shocks.push({ x: buffPickup.x, y: buffPickup.y, t: 0, max: 130 * dpr, shield: true });
-            buffPickup = null; nextBuffDrop = elapsed + 4 + Math.random() * 3;
-          }
-        }
+      for (let i = buffPickups.length - 1; i >= 0; i--) {
+        const bp = buffPickups[i];
+        if (elapsed - bp.born > PICKUP_TTL) { buffPickups.splice(i, 1); continue; }
+        const dx = player.x - bp.x, dy = player.y - bp.y, reach = STAR_R * 1.6 * dpr + player.r;
+        if (dx * dx + dy * dy < reach * reach) { applyBuff(bp.kind, bp.x, bp.y); buffPickups.splice(i, 1); }
       }
       // rotating boss archetypes — warn first (voice + edge flash), then spawn a beat later
       const wantBosses = Math.min(3, 1 + Math.floor(elapsed / 70));
@@ -2061,9 +2068,9 @@
   const BUFF_STYLE = {
     shield: ["150,225,255", "⬡"], frenzy: ["255,106,213", "✸"],
     power:  ["255,138,96", "✦"],  bounce: ["120,255,190", "⟲"], freeze: ["190,240,255", "❄"],
-    heal:   ["255,90,120", "♥"], levelup: ["255,236,120", "▲"], overdrive: ["120,255,255", "★"], blade: ["230,245,255", "⚔"], dual: ["255,180,90", "⚌"], starbomb: ["255,240,150", "✷"],
+    heal:   ["255,90,120", "♥"], levelup: ["255,236,120", "▲"], overdrive: ["120,255,255", "★"], blade: ["230,245,255", "⚔"], dual: ["255,180,90", "⚌"], starbomb: ["255,240,150", "✷"], repel: ["150,210,255", "⤜"],
   };
-  const BUFF_NAME = { shield: "Shield", frenzy: "Frenzy", power: "Power", bounce: "Bounce", freeze: "Freeze", heal: "Heal", levelup: "Level Up", overdrive: "Overdrive", blade: "Blade", dual: "Dual wield", starbomb: "Star bomb" };
+  const BUFF_NAME = { shield: "Shield", frenzy: "Frenzy", power: "Power", bounce: "Bounce", freeze: "Freeze", heal: "Heal", levelup: "Level Up", overdrive: "Overdrive", blade: "Blade", dual: "Dual wield", starbomb: "Star bomb", repel: "Repel" };
   function drawBuffPickup(cx, cy, t, kind, alpha) {
     const st = BUFF_STYLE[kind] || ["150,255,210", "✦"], c = st[0];
     const R = (STAR_R * 1.6 + 1 + Math.sin(t * 5) * 1.5) * dpr;
@@ -2536,13 +2543,16 @@
     if (slowmo) { slowmo.t += 0.03; drawSlow(slowmo.x, slowmo.y, slowmo.t); }
 
     // arena weapon + buff pickups (fade out as they near their despawn time)
-    if (weaponPickup) { weaponPickup.t += 0.05; const a = pickupAlpha(weaponPickup); drawWeaponPickup(weaponPickup.x, weaponPickup.y, weaponPickup.t, weaponPickup.kind, a); }
-    if (buffPickup) { buffPickup.t += 0.05; const a = pickupAlpha(buffPickup); drawBuffPickup(buffPickup.x, buffPickup.y, buffPickup.t, buffPickup.kind, a); }
+    for (const wp of weaponPickups) { wp.t += 0.05; drawWeaponPickup(wp.x, wp.y, wp.t, wp.kind, pickupAlpha(wp)); }
+    for (const bp of buffPickups) { bp.t += 0.05; drawBuffPickup(bp.x, bp.y, bp.t, bp.kind, pickupAlpha(bp)); }
 
     // darts/projectiles in flight — coloured per weapon; Lv10 turns them rainbow
     if (bullets.length) {
       ctx.save();
-      ctx.lineCap = "round"; // no per-bullet shadowBlur — far cheaper with hundreds in flight
+      ctx.lineCap = "round";
+      // active powerup tints the bullets' glow (set once for the whole pass to stay cheap)
+      const glowCol = buffs.overdrive > elapsed ? "120,255,255" : buffs.power > elapsed ? "255,138,96" : buffs.frenzy > elapsed ? "255,106,213" : buffs.bounce > elapsed ? "120,255,190" : null;
+      if (glowCol) { ctx.shadowColor = `rgba(${glowCol},0.95)`; ctx.shadowBlur = 9 * dpr; }
       for (const bl of bullets) {
         const br = bl.r || 5 * dpr;
         const base = bl.col || "150,255,210";
@@ -2626,9 +2636,9 @@
       const k = Math.max(0, Math.min(1, (elapsed - flashFrom) / 0.3, (flashUntil - elapsed) / 0.45));
       edgeWash(flashCol, k * (0.34 + 0.28 * Math.abs(Math.sin(elapsed * 7))));
     }
-    if (mode === "arena" && running && playerHp === 1) { // eases in over ~0.6s, steady gentle pulse
-      const k = Math.max(0, Math.min(1, (elapsed - lowHpFrom) / 0.6));
-      edgeWash("255,40,60", k * (0.22 + 0.12 * Math.sin(elapsed * 4)));
+    if (mode === "arena" && running && playerHp === 1) { // constant red danger edge (slight pulse), eases in
+      const k = Math.max(0, Math.min(1, (elapsed - lowHpFrom) / 0.5));
+      edgeWash("255,40,60", k * (0.38 + 0.07 * Math.sin(elapsed * 4)));
     }
 
     // frozen-time tint + frost vignette
