@@ -359,17 +359,17 @@
     // throw entities out of the (rescaled) coordinate space and break the game.
     // (guarded by oldW so it never runs on the first call, before state exists)
     if (oldW && oldH && (oldW !== w || oldH !== h)) {
-      const sx = w / oldW, sy = h / oldH;
+      const sx = w / oldW, sy = h / oldH, sR = (sx + sy) / 2; // sR also rescales radii so sizes stay consistent through a zoom
       const sc = (o) => { if (o) { o.x *= sx; o.y *= sy; } };
       player.r = 7 * dpr;
       sc(player); player.px *= sx; player.py *= sy;
-      for (const hn of hunters) { hn.x *= sx; hn.y *= sy; }
+      for (const hn of hunters) { hn.x *= sx; hn.y *= sy; hn.r0 *= sR; hn.r *= sR; }
       for (const g of gems) { g.x *= sx; g.y *= sy; }
       for (const p of weaponPickups) { p.x *= sx; p.y *= sy; }
       for (const p of buffPickups) { p.x *= sx; p.y *= sy; }
-      for (const bl of bullets) { bl.x *= sx; bl.y *= sy; }
+      for (const bl of bullets) { bl.x *= sx; bl.y *= sy; if (bl.r) bl.r *= sR; }
       for (const eb of enemyBullets) { eb.x *= sx; eb.y *= sy; }
-      for (const b of bosses) { b.x *= sx; b.y *= sy; }
+      for (const b of bosses) { b.x *= sx; b.y *= sy; b.r *= sR; }
       for (const s of shocks) { s.x *= sx; s.y *= sy; }
       sc(star); sc(ice); sc(shield); sc(shooter);
       if (anchor) { anchor.fx *= sx; anchor.fy *= sy; anchor.px *= sx; anchor.py *= sy; }
