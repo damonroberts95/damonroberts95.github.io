@@ -475,7 +475,7 @@
   let startWeapon = "dart";           // chosen on the Bullet Hell weapon-select screen
   let nextWeaponDrop = 0, nextBuffDrop = 0;
   let weaponPickup = null, buffPickup = null; // {x, y, t, kind, born} — despawn after PICKUP_TTL
-  const buffs = { frenzy: 0, power: 0, bounce: 0, overdrive: 0, blade: 0, dual: 0 }; // each holds the elapsed time it expires at
+  const buffs = { frenzy: 0, power: 0, bounce: 0, overdrive: 0, blade: 0, dual: 0, shield: 0 }; // each holds the elapsed time it expires at
   let dualWeapon = "dart", nextDual = 0; // Dual-wield buff: a second weapon fired alongside the main
   let bladeAng = 0, bladeVel = 0; // melee blade angle + angular velocity (follows mouse w/ momentum; Blade buff)
   let nextCluster = 0;            // arena: timer for spawning tight node clusters
@@ -728,7 +728,7 @@
     weaponPickup = null; buffPickup = null;
     nextWeaponDrop = 3 + Math.random() * 2; nextBuffDrop = 2.5 + Math.random() * 2;
     arenaKeys.w = arenaKeys.a = arenaKeys.s = arenaKeys.d = false; fireHold = false;
-    buffs.frenzy = buffs.power = buffs.bounce = buffs.overdrive = buffs.blade = buffs.dual = 0; bladeAng = 0; bladeVel = 0; nextDual = 0;
+    buffs.frenzy = buffs.power = buffs.bounce = buffs.overdrive = buffs.blade = buffs.dual = buffs.shield = 0; bladeAng = 0; bladeVel = 0; nextDual = 0;
     arenaBossIdx = 0; nextArenaBoss = 12 + Math.random() * 4; bossSpawnAt = 0; flashUntil = 0; lowHpFrom = 1e9;
     playerMaxHp = mode === "arena" ? 5 : 1; playerHp = playerMaxHp;
     regenShield = true; regenReadyAt = 0;
@@ -906,6 +906,12 @@
   // a lethal touch — consumed by shield + i-frames; returns true if it kills
   function takeHit() {
     if (elapsed < invulnUntil) return false;        // i-frames
+    if (buffs.shield > elapsed) {                   // timed Shield buff — soaks every hit for its duration
+      invulnUntil = elapsed + 0.5;
+      shocks.push({ x: player.x, y: player.y, t: 0, max: 200 * dpr, shield: true });
+      for (const hn of hunters) { const dx = hn.x - player.x, dy = hn.y - player.y, d = Math.hypot(dx, dy) || 1; if (d < 300 * dpr) { const k = 700 * dpr; hn.vx += (dx / d) * k; hn.vy += (dy / d) * k; } }
+      return false;
+    }
     if (shieldActive) {
       shieldActive = false; audio.setShield(false);
       invulnUntil = elapsed + 1.3;
@@ -1211,6 +1217,7 @@
     // ---- arena: weapon drops, buff drops (both fade out), autofire, rotating bosses ----
     if (mode === "arena") {
       if (!regenShield && elapsed >= regenReadyAt) regenShield = true; // shield finished recharging
+      if (buffs.shield > 0 && buffs.shield <= elapsed) { audio.setShield(false); buffs.shield = 0; } // timed shield ended → music back to normal
       // weapon drop — same kind as held → level up; new kind → switch (level resets to 1)
       if (!weaponPickup && elapsed >= nextWeaponDrop) {
         const kind = WEAPON_KINDS[(Math.random() * WEAPON_KINDS.length) | 0];
@@ -1241,7 +1248,7 @@
           const dx = player.x - buffPickup.x, dy = player.y - buffPickup.y, reach = STAR_R * 1.6 * dpr + player.r;
           if (dx * dx + dy * dy < reach * reach) {
             const k = buffPickup.kind;
-            if (k === "shield") { shieldActive = true; audio.setShield(true); audio.sfx("shield"); }
+            if (k === "shield") { buffs.shield = elapsed + 9; audio.setShield(true); audio.sfx("shield"); } // lasts the whole duration, not one hit
             else if (k === "freeze") { frozenUntil = elapsed + 4; audio.sfx("freeze"); shocks.push({ x: buffPickup.x, y: buffPickup.y, t: 0, max: 320 * dpr, ice: true }); }
             else if (k === "heal") { playerHp = Math.min(playerMaxHp, playerHp + 1); audio.sfx("shield"); } // restore a life
             else if (k === "levelup") { weaponLvls[weapon] = weaponLvl + 1; weaponLvl = weaponLvls[weapon]; audio.sfx("blast"); } // bump the current weapon a level
@@ -2304,7 +2311,7 @@
       ctx.textAlign = "center";
       // buffs
       const active = [];
-      if (shieldActive) active.push(["SHIELD", "150,225,255"]);
+      if (shieldActive || buffs.shield > elapsed) active.push(["SHIELD", "150,225,255"]);
       if (elapsed < frozenUntil) active.push(["FREEZE", "190,240,255"]);
       if (buffs.frenzy > elapsed) active.push(["FRENZY", "255,106,213"]);
       if (buffs.power > elapsed) active.push(["POWER", "255,138,96"]);
@@ -2668,8 +2675,8 @@
     ctx.beginPath(); ctx.arc(player.x, player.y, pr * 3.2, 0, 6.283185); ctx.fill();
     ctx.fillStyle = "rgba(255,255,255,0.98)";
     ctx.beginPath(); ctx.arc(player.x, player.y, pr, 0, 6.283185); ctx.fill();
-    // shield ring (pickup shield)
-    if (shieldActive) {
+    // shield ring (pickup / timed shield)
+    if (shieldActive || buffs.shield > elapsed) {
       ctx.lineWidth = 2.5 * dpr;
       ctx.strokeStyle = `rgba(150,225,255,${0.6 + 0.3 * Math.sin(elapsed * 6)})`;
       ctx.beginPath(); ctx.arc(player.x, player.y, pr * 2.6, 0, 6.283185); ctx.stroke();
