@@ -491,7 +491,7 @@
   const WEAPONS = {
     dart:   { name: "Dart",   gap: 0.15, spd: 820, r: 5,  count: 1, spread: 0,    pierce: 0, dmg: 3.2, homing: false },
     spread: { name: "Spread", gap: 0.30, spd: 700, r: 5,  count: 3, spread: 0.30, pierce: 0, dmg: 1.6, homing: false },
-    rapid:  { name: "Rapid",  gap: 0.07, spd: 1000, r: 3.5, count: 1, spread: 0.13, pierce: 0, dmg: 1.35, homing: false },
+    rapid:  { name: "Rapid",  gap: 0.06, spd: 1000, r: 3.5, count: 1, spread: 0.13, pierce: 0, dmg: 2.0, homing: false },
     homing: { name: "Seeker", gap: 0.30, spd: 560, r: 6,  count: 1, spread: 0,    pierce: 0, dmg: 1.9, homing: true },
     ricochet:{ name: "Ricochet", gap: 0.32, spd: 660, r: 5, count: 1, spread: 0,  pierce: 1, dmg: 3.2, homing: false, bounce: true },
     mortar: { name: "Missile", gap: 0.5,  spd: 540, r: 4, count: 1, spread: 0,    pierce: 0, dmg: 5.5, homing: true, explode: true, turn: 1.6 },
