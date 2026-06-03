@@ -522,7 +522,7 @@
     else if (wk === "rapid") s.count = lvl >= 4 ? 2 : 1;                // twin stream at high level
     else if (wk === "homing") s.count = lvl >= 6 ? 2 : 1; // at most two seekers (kept cheap + not OP)
     else if (wk === "ricochet") { s.count = lvl >= 4 ? 2 : 1; s.pierce = b.pierce + Math.floor((lvl - 1) / 2); } // more ricochets + punches through
-    else if (wk === "dart") s.count = lvl >= 6 ? 3 : lvl >= 3 ? 2 : 1;  // double / triple dart
+    else if (wk === "dart") { s.count = Math.min(8, lvl); s.cross = lvl >= 2; } // +1 evenly-spread direction per level (Lv2 = front+back …)
     return s;
   }
 
@@ -549,7 +549,8 @@
       arcs.push({ x: player.x, y: player.y, ang: base, age: 0, spd: wspd, maxR, half, band: (6 + ws.r * 1.2) * dpr, dmg, rainbow: maxed, hit: new Set(), hitB: new Set() });
     } else {
       const homing = WEAPONS[wk].homing, n = ws.count, fan = ws.spread || (n > 1 ? 0.12 : 0), angles = [];
-      for (let k = 0; k < n; k++) angles.push(base + (n === 1 ? 0 : (k / (n - 1) - 0.5) * fan) + (Math.random() * 2 - 1) * fan * 0.12);
+      if (ws.cross) { for (let k = 0; k < n; k++) angles.push(base + k * (6.283185 / n)); } // evenly around the circle
+      else for (let k = 0; k < n; k++) angles.push(base + (n === 1 ? 0 : (k / (n - 1) - 0.5) * fan) + (Math.random() * 2 - 1) * fan * 0.12);
       const turn = WEAPONS[wk].turn || 7;
       for (const a of angles) bullets.push({ x: player.x, y: player.y, vx: Math.cos(a) * bspd, vy: Math.sin(a) * bspd, life: bounce ? 3.8 : homing ? 2.6 : 1.4, r, pierce, dmg, bounce, homing, turn, explode: expl, boom, knock, spd: bspd, col: wcol, kind: wk, rainbow: maxed, hitB: null });
     }
