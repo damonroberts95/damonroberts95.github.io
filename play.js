@@ -459,7 +459,6 @@
   let shooter = null, nextShooter = 0; // {x,y,t} collectable — temp auto-fire weapon
   let shootUntil = 0, nextBullet = 0;  // armed window + dart cadence
   let bullets = [];                    // {x,y,vx,vy,life} darts fired along travel
-  let arcs = [];                       // arena Wave weapon: expanding crescents from the player
   const heading = { x: 1, y: 0 };      // last significant travel direction
   const SHOOT_DUR = 6, BULLET_GAP = 0.1;
   let slowmo = null, nextSlow = 0, speedSetback = 0; // rare powerup: rolls the SPEED ramp back a few seconds (cap unaffected)
@@ -546,13 +545,13 @@
       // a crescent made of discrete fat segments fanned across an arc — each segment is
       // its own projectile (absorbed after a pierce or two, and bounces with the buff).
       // The fan visibly shows the firing angle; arc width + segment count grow with level.
-      const wspd = ws.spd * dpr * arenaScale, half = Math.min(1.15, 0.5 + (lvl - 1) * 0.06);
-      const segs = 5 + Math.floor(lvl * 0.8);
-      const wr = (10 + ws.r * 1.1) * (power ? 1.4 : 1) * dpr;
+      const wspd = ws.spd * dpr * arenaScale, half = Math.min(0.8, 0.38 + (lvl - 1) * 0.035);
+      const segs = 5 + Math.floor(lvl * 0.7);
+      const wr = (5 + ws.r * 0.6) * (power ? 1.3 : 1) * dpr;
       const wPierce = 1 + Math.floor(lvl / 4) + (power ? 2 : 0); // absorbed after 1–2 hits (more late / w/ Power)
       for (let k = 0; k < segs; k++) {
         const a = base + (segs === 1 ? 0 : (k / (segs - 1) - 0.5) * 2 * half);
-        bullets.push({ x: player.x, y: player.y, vx: Math.cos(a) * wspd, vy: Math.sin(a) * wspd, life: bounce ? 3.2 : 1.7, r: wr, pierce: wPierce, dmg, bounce, knock, spd: wspd, col: wcol, kind: "wave", rainbow: maxed, hitB: null });
+        bullets.push({ x: player.x, y: player.y, vx: Math.cos(a) * wspd, vy: Math.sin(a) * wspd, life: bounce ? 2.0 : 1.0, r: wr, pierce: wPierce, dmg, bounce, knock, spd: wspd, col: wcol, kind: "wave", rainbow: maxed, hitB: null });
       }
     } else {
       const homing = WEAPONS[wk].homing, n = ws.count, fan = ws.spread || (n > 1 ? 0.12 : 0), angles = [];
@@ -718,7 +717,7 @@
     shield = null; nextShield = 16 + Math.random() * 10;
     shieldActive = false; invulnUntil = 0;
     shooter = null; nextShooter = 18 + Math.random() * 10;
-    shootUntil = 0; nextBullet = 0; bullets = []; arcs = [];
+    shootUntil = 0; nextBullet = 0; bullets = [];
     slowmo = null; nextSlow = 40 + Math.random() * 30; speedSetback = 0;
     heading.x = 1; heading.y = 0;
     bosses = []; enemyBullets = []; nextBoss = 24 + Math.random() * 14;
@@ -1631,40 +1630,6 @@
       if (spent) { bullets.splice(i, 1); continue; }
     }
     if (bulletKills) { showPts(); hunters = hunters.filter((hn) => !hn.dead); } // sweep bullet-killed nodes once
-
-    // Wave crescents — expand from the player, sweeping nodes/bosses inside the band + arc
-    for (let i = arcs.length - 1; i >= 0; i--) {
-      const ar = arcs[i];
-      ar.age += dt;
-      if (ar.age < 0) continue; // staggered launch
-      const rad = ar.age * ar.spd;
-      if (rad > ar.maxR) { arcs.splice(i, 1); continue; }
-      const innr = rad - ar.band, inner2 = innr > 0 ? innr * innr : 0, outer2 = (rad + ar.band) * (rad + ar.band);
-      let arcKill = false;
-      for (let j = hunters.length - 1; j >= 0; j--) {
-        const hn = hunters[j]; if (hn.dead || ar.hit.has(hn)) continue;
-        const dx = hn.x - ar.x, dy = hn.y - ar.y, d2 = dx * dx + dy * dy;
-        if (d2 < inner2 || d2 > outer2) continue;
-        let da = Math.atan2(dy, dx) - ar.ang; while (da > Math.PI) da -= 6.283185; while (da < -Math.PI) da += 6.283185;
-        if (Math.abs(da) <= ar.half) { ar.hit.add(hn); if (hurtNode(hn, ar.dmg)) { hn.dead = true; points += KILL_VAL; arcKill = true; shocks.push({ x: hn.x, y: hn.y, t: 0, max: 36 * dpr }); } }
-      }
-      if (arcKill) { showPts(); hunters = hunters.filter((hn) => !hn.dead); }
-      for (let bi = bosses.length - 1; bi >= 0; bi--) {
-        const b = bosses[bi]; if (!b.maxHp || ar.hitB.has(b)) continue;
-        const dx = b.x - ar.x, dy = b.y - ar.y, d2 = dx * dx + dy * dy;
-        if (d2 < inner2 || d2 > outer2) continue;
-        let da = Math.atan2(dy, dx) - ar.ang; while (da > Math.PI) da -= 6.283185; while (da < -Math.PI) da += 6.283185;
-        if (Math.abs(da) > ar.half) continue;
-        b.hp -= ar.dmg; ar.hitB.add(b);
-        if (b.hp <= 0) {
-          popInto(b.x, b.y, b.color, b.kind === "splitter" ? 16 : 9);
-          points += BOSS_VAL; showPts();
-          shocks.push({ x: b.x, y: b.y, t: 0, max: 240 * dpr, rainbow: true });
-          audio.sfx("blast"); bossDrop(b.x, b.y); bosses.splice(bi, 1);
-          if (mode === "arena" && bosses.length === 0) nextArenaBoss = elapsed + 8 + Math.random() * 5;
-        }
-      }
-    }
 
     drawScene();
     requestAnimationFrame(loop);
@@ -2617,22 +2582,6 @@
       ctx.restore(); ctx.shadowBlur = 0;
     }
 
-    // Wave crescents — bright expanding arcs sweeping out from the player
-    if (arcs.length) {
-      ctx.save(); ctx.lineCap = "round";
-      for (const ar of arcs) {
-        if (ar.age < 0) continue;
-        const rad = ar.age * ar.spd, a = Math.max(0, 1 - rad / ar.maxR);
-        const stroke = ar.rainbow ? `hsl(${(elapsed * 320 + rad) % 360},100%,66%)` : `rgba(199,116,232,${0.45 + 0.45 * a})`;
-        ctx.strokeStyle = stroke;
-        ctx.shadowColor = ar.rainbow ? stroke : `rgba(199,116,232,${a})`; ctx.shadowBlur = 16 * dpr;
-        ctx.globalAlpha = ar.rainbow ? 0.45 + 0.45 * a : 1;
-        ctx.lineWidth = ar.band * 1.3;
-        ctx.beginPath(); ctx.arc(ar.x, ar.y, rad, ar.ang - ar.half, ar.ang + ar.half); ctx.stroke();
-        ctx.globalAlpha = 1;
-      }
-      ctx.restore(); ctx.shadowBlur = 0;
-    }
 
     // Blade buff — glowing spinning blade + a trailing sweep arc
     if (mode === "arena" && buffs.blade > elapsed && playerAlpha > 0.3) {
