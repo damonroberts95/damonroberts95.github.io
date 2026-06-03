@@ -1189,7 +1189,7 @@
     for (let i = gems.length - 1; i >= 0; i--) {
       const g = gems[i];
       const gdx = player.x - g.x, gdy = player.y - g.y;
-      const reach = (mode === "arena" ? 46 : GEM_R) * dpr + player.r; // arena: roomier diamond grab
+      const reach = (mode === "arena" ? 34 : GEM_R) * dpr + player.r; // arena: roomier diamond grab
       if (gdx * gdx + gdy * gdy < reach * reach) {
         mult = elapsed < comboUntil ? Math.min(MULT_MAX, mult + 1) : 1; // chain → multiplier
         comboUntil = elapsed + COMBO_WINDOW;
