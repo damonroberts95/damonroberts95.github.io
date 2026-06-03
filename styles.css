@@ -160,6 +160,10 @@ body::after {
   cursor: pointer;
   touch-action: none;
   will-change: transform;
+  /* no text-selection / blue tap-highlight when dragging the "D" on touch */
+  user-select: none; -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
   /* base is the normal text colour; a coloured band sweeps left→right periodically.
      band colours are randomised within the page palette each cycle (set by JS) */
   background: linear-gradient(110deg,
