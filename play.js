@@ -349,9 +349,10 @@
     // motion and web reach with the viewport so difficulty stays consistent.
     arenaScale = Math.max(0.8, Math.min(2, Math.min(innerWidth, innerHeight) / 820));
     linkD2 = (LINK_DIST * LINK_SCALE * arenaScale * dpr) ** 2;
-    // on-canvas UI (banner/labels) sized off DEVICE dimensions, not dpr, so it stays
-    // a sensible physical size when zoomed out (where dpr shrinks but the screen doesn't).
-    uiScale = Math.max(0.9, Math.min(2, Math.min(w, h) / 780));
+    // on-canvas UI scale. Browser zoom raises devicePixelRatio past our dpr cap, so fold
+    // the uncapped zoom back in → the HUD keeps scaling with zoom instead of stalling.
+    const zoom = Math.max(1, (window.devicePixelRatio || 1) / dpr);
+    uiScale = Math.max(0.9, Math.min(2.6, (Math.min(w, h) / 780) * zoom));
     // remap every position to the new dimensions so a mid-run zoom/resize doesn't
     // throw entities out of the (rescaled) coordinate space and break the game.
     // (guarded by oldW so it never runs on the first call, before state exists)
@@ -362,6 +363,8 @@
       sc(player); player.px *= sx; player.py *= sy;
       for (const hn of hunters) { hn.x *= sx; hn.y *= sy; }
       for (const g of gems) { g.x *= sx; g.y *= sy; }
+      for (const p of weaponPickups) { p.x *= sx; p.y *= sy; }
+      for (const p of buffPickups) { p.x *= sx; p.y *= sy; }
       for (const bl of bullets) { bl.x *= sx; bl.y *= sy; }
       for (const eb of enemyBullets) { eb.x *= sx; eb.y *= sy; }
       for (const b of bosses) { b.x *= sx; b.y *= sy; }
@@ -372,6 +375,7 @@
   }
   resize();
   addEventListener("resize", resize);
+  if (window.visualViewport) visualViewport.addEventListener("resize", resize); // catch browser/pinch zoom
 
   // player follows the pointer; start centred
   // px/py = previous frame position, vx/vy = velocity (drives ambush/predict)
