@@ -337,6 +337,7 @@
   const GROUP_SCALE = MOBILE ? 0.7 : 1;  // tighter clumps on small screens → nodes ball up, opening dodge lanes
 
   let w, h, dpr = 1, linkD2, arenaScale = 1, uiScale = 1;
+  const basePR = window.devicePixelRatio || 1; // pixel ratio at load = "100% zoom" reference
   function resize() {
     const oldW = w, oldH = h;
     dpr = Math.min(window.devicePixelRatio || 1, 3); // higher cap → stays crisp when zoomed in
@@ -374,6 +375,10 @@
       sc(star); sc(ice); sc(shield); sc(shooter);
       if (anchor) { anchor.fx *= sx; anchor.fy *= sy; anchor.px *= sx; anchor.py *= sy; }
     }
+    // counter-scale the HTML UI (menus / score / help) so they stay a constant on-screen
+    // size regardless of browser zoom — root font drives the rem-based layout.
+    const zoom = (window.devicePixelRatio || 1) / basePR;
+    document.documentElement.style.fontSize = (16 / Math.max(0.5, Math.min(2.2, zoom))) + "px";
   }
   resize();
   addEventListener("resize", resize);
