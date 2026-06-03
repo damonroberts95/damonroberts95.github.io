@@ -497,7 +497,7 @@
     mortar: { name: "Missile", gap: 0.5,  spd: 540, r: 4, count: 1, spread: 0,    pierce: 0, dmg: 5.5, homing: true, explode: true, turn: 1.6 },
     wave:   { name: "Wave",   gap: 0.46, spd: 470, r: 6, count: 1, spread: 0,    pierce: 8, dmg: 3, homing: false },
   };
-  const WEAPON_KINDS = ["spread", "rapid", "homing", "ricochet", "mortar", "wave"]; // droppable (dart is the starting weapon)
+  const WEAPON_KINDS = ["dart", "spread", "rapid", "homing", "ricochet", "mortar", "wave"]; // droppable weapon kinds
   const BUFF_KINDS = ["shield", "frenzy", "power", "bounce", "freeze", "heal", "levelup", "overdrive", "blade", "dual", "starbomb"];
   const ARENA_BOSSES = ["spiral", "burst", "charger", "splitter", "weaver"];
 
@@ -681,6 +681,8 @@
   const hurtNode = (hn, dmg) => { hn.hp -= dmg / (1 + (hn.snb || 0) * 0.12); return hn.hp <= 0; };
   // Power buff damage multiplier — strength grows with the run (duration stays fixed)
   const powerMul = () => 1.5 + Math.min(1.6, elapsed * 0.011);
+  // a slain arena boss has a good chance to drop a Level Up (lands where it died)
+  function bossDrop(x, y) { if (mode === "arena" && Math.random() < 0.5) buffPickup = { x, y, t: 0, kind: "levelup", born: elapsed }; }
 
   // Missile explosion — an expanding star-bomb-style shock: the front clears nodes it
   // reaches and chips bosses once (dmg). Handled by the shock-kill pass in drawScene.
@@ -1237,7 +1239,7 @@
             else if (k === "freeze") { frozenUntil = elapsed + 4; audio.sfx("freeze"); shocks.push({ x: buffPickup.x, y: buffPickup.y, t: 0, max: 320 * dpr, ice: true }); }
             else if (k === "heal") { playerHp = Math.min(playerMaxHp, playerHp + 1); audio.sfx("shield"); } // restore a life
             else if (k === "levelup") { weaponLvls[weapon] = weaponLvl + 1; weaponLvl = weaponLvls[weapon]; audio.sfx("blast"); } // bump the current weapon a level
-            else if (k === "dual") { const pool = ["dart", ...WEAPON_KINDS].filter((x) => x !== weapon); dualWeapon = pool[(Math.random() * pool.length) | 0]; buffs.dual = elapsed + 11; nextDual = 0; audio.sfx("blast"); } // 2nd weapon for a bit
+            else if (k === "dual") { const pool = WEAPON_KINDS.filter((x) => x !== weapon); dualWeapon = pool[(Math.random() * pool.length) | 0]; buffs.dual = elapsed + 11; nextDual = 0; audio.sfx("blast"); } // 2nd weapon for a bit
             else if (k === "starbomb") { starBlast(); } // instant screen-clearing blast wave
 
             else { buffs[k] = elapsed + 9; audio.sfx("blast"); } // frenzy / power / bounce
@@ -1290,7 +1292,7 @@
           if (dx * dx + dy * dy < reach * reach) {
             b.hp -= bdmg * 7; // bosses take the scaled blade damage too
             const d = Math.hypot(ax, ay) || 1; b.vx += (ax / d) * 140 * dpr * dt; b.vy += (ay / d) * 140 * dpr * dt;
-            if (b.hp <= 0) { popInto(b.x, b.y, b.color, b.kind === "splitter" ? 16 : 9); points += BOSS_VAL; showPts(); shocks.push({ x: b.x, y: b.y, t: 0, max: 240 * dpr, rainbow: true }); audio.sfx("blast"); bosses.splice(bi, 1); if (bosses.length === 0) nextArenaBoss = elapsed + 8 + Math.random() * 5; }
+            if (b.hp <= 0) { popInto(b.x, b.y, b.color, b.kind === "splitter" ? 16 : 9); points += BOSS_VAL; showPts(); shocks.push({ x: b.x, y: b.y, t: 0, max: 240 * dpr, rainbow: true }); audio.sfx("blast"); bossDrop(b.x, b.y); bosses.splice(bi, 1); if (bosses.length === 0) nextArenaBoss = elapsed + 8 + Math.random() * 5; }
           }
         }
       }
@@ -1604,6 +1606,7 @@
             points += BOSS_VAL; showPts();
             shocks.push({ x: b.x, y: b.y, t: 0, max: 240 * dpr, rainbow: true });
             audio.sfx("blast");
+            bossDrop(b.x, b.y);
             bosses.splice(bi, 1);
             if (mode === "arena" && bosses.length === 0) nextArenaBoss = elapsed + 8 + Math.random() * 5;
           } else if (bl.bounce) {
@@ -1650,7 +1653,7 @@
           popInto(b.x, b.y, b.color, b.kind === "splitter" ? 16 : 9);
           points += BOSS_VAL; showPts();
           shocks.push({ x: b.x, y: b.y, t: 0, max: 240 * dpr, rainbow: true });
-          audio.sfx("blast"); bosses.splice(bi, 1);
+          audio.sfx("blast"); bossDrop(b.x, b.y); bosses.splice(bi, 1);
           if (mode === "arena" && bosses.length === 0) nextArenaBoss = elapsed + 8 + Math.random() * 5;
         }
       }
@@ -2474,6 +2477,7 @@
             popInto(b.x, b.y, b.color, 8);
             points += BOSS_VAL; showPts();
             shocks.push({ x: b.x, y: b.y, t: 0, max: 200 * dpr });
+            bossDrop(b.x, b.y);
             bosses.splice(bi, 1);
             if (mode === "arena" && bosses.length === 0) nextArenaBoss = elapsed + 8 + Math.random() * 5;
           }
