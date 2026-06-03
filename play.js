@@ -339,7 +339,7 @@
   let w, h, dpr = 1, linkD2, arenaScale = 1, uiScale = 1;
   function resize() {
     const oldW = w, oldH = h;
-    dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    dpr = Math.min(window.devicePixelRatio || 1, 3); // higher cap → stays crisp when zoomed in
     w = canvas.width = Math.floor(innerWidth * dpr);
     h = canvas.height = Math.floor(innerHeight * dpr);
     canvas.style.width = innerWidth + "px";
