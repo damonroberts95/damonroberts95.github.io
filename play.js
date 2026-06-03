@@ -491,8 +491,8 @@
   const WEAPONS = {
     dart:   { name: "Dart",   gap: 0.15, spd: 820, r: 5,  count: 1, spread: 0,    pierce: 1, dmg: 3.2, homing: false },
     spread: { name: "Spread", gap: 0.30, spd: 700, r: 5,  count: 3, spread: 0.30, pierce: 0, dmg: 2.3, homing: false },
-    rapid:  { name: "Rapid",  gap: 0.06, spd: 1000, r: 3.5, count: 1, spread: 0.13, pierce: 1, dmg: 2.0, homing: false },
-    homing: { name: "Seeker", gap: 0.30, spd: 560, r: 6,  count: 1, spread: 0,    pierce: 0, dmg: 1.9, homing: true },
+    rapid:  { name: "Rapid",  gap: 0.06, spd: 1000, r: 3.5, count: 1, spread: 0.13, pierce: 1, dmg: 1.5, homing: false },
+    homing: { name: "Seeker", gap: 0.30, spd: 560, r: 6,  count: 1, spread: 0,    pierce: 0, dmg: 2.4, homing: true },
     ricochet:{ name: "Ricochet", gap: 0.32, spd: 660, r: 5, count: 1, spread: 0,  pierce: 1, dmg: 3.2, homing: false, bounce: true },
     mortar: { name: "Missile", gap: 0.5,  spd: 540, r: 4, count: 1, spread: 0,    pierce: 0, dmg: 5.5, homing: true, explode: true, turn: 1.6 },
     wave:   { name: "Wave",   gap: 0.46, spd: 470, r: 6, count: 1, spread: 0,    pierce: 8, dmg: 3, homing: false },
@@ -543,10 +543,17 @@
     const expl = WEAPONS[wk].explode, boom = expl ? (95 + lvl * 8) * dpr * arenaScale : 0;
     const knock = (260 + lvl * 16) * dpr; // bullets shove surviving nodes hard (physics w/ the HP system)
     if (wk === "wave") {
-      // single crescent — reach, arc width and band all grow with level
-      const wspd = ws.spd * dpr * arenaScale, maxR = (340 + lvl * 46) * dpr * arenaScale;
-      const half = Math.min(1.0, 0.42 + (lvl - 1) * 0.05);
-      arcs.push({ x: player.x, y: player.y, ang: base, age: 0, spd: wspd, maxR, half, band: (6 + ws.r * 1.2) * dpr, dmg, rainbow: maxed, hit: new Set(), hitB: new Set() });
+      // a crescent made of discrete fat segments fanned across an arc — each segment is
+      // its own projectile (absorbed after a pierce or two, and bounces with the buff).
+      // The fan visibly shows the firing angle; arc width + segment count grow with level.
+      const wspd = ws.spd * dpr * arenaScale, half = Math.min(1.15, 0.5 + (lvl - 1) * 0.06);
+      const segs = 5 + Math.floor(lvl * 0.8);
+      const wr = (10 + ws.r * 1.1) * (power ? 1.4 : 1) * dpr;
+      const wPierce = 1 + Math.floor(lvl / 4) + (power ? 2 : 0); // absorbed after 1–2 hits (more late / w/ Power)
+      for (let k = 0; k < segs; k++) {
+        const a = base + (segs === 1 ? 0 : (k / (segs - 1) - 0.5) * 2 * half);
+        bullets.push({ x: player.x, y: player.y, vx: Math.cos(a) * wspd, vy: Math.sin(a) * wspd, life: bounce ? 3.2 : 1.7, r: wr, pierce: wPierce, dmg, bounce, knock, spd: wspd, col: wcol, kind: "wave", rainbow: maxed, hitB: null });
+      }
     } else {
       const homing = WEAPONS[wk].homing, n = ws.count, fan = ws.spread || (n > 1 ? 0.12 : 0), angles = [];
       if (ws.cross) { for (let k = 0; k < n; k++) angles.push(base + k * (6.283185 / n)); } // evenly around the circle
@@ -2593,6 +2600,9 @@
         } else if (k === "mortar") {                 // heavy round bomb with a ring
           ctx.beginPath(); ctx.arc(bl.x, bl.y, br, 0, 6.283185); ctx.fill();
           ctx.lineWidth = 1.6 * dpr; ctx.beginPath(); ctx.arc(bl.x, bl.y, br * 1.5, 0, 6.283185); ctx.stroke();
+        } else if (k === "wave") {                   // fat wavefront chunk — bar across the travel direction
+          ctx.lineWidth = br * 1.1;
+          ctx.beginPath(); ctx.moveTo(bl.x - px * br * 1.3, bl.y - py * br * 1.3); ctx.lineTo(bl.x + px * br * 1.3, bl.y + py * br * 1.3); ctx.stroke();
         } else {                                     // dart / default — streak + arrowhead
           const len = Math.max(11 * dpr, br * 2.2);
           ctx.lineWidth = Math.max(3 * dpr, br * 0.7);
