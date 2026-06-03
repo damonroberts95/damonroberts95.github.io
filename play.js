@@ -1253,9 +1253,12 @@
     if (mode === "arena") {
       if (!regenShield && elapsed >= regenReadyAt) regenShield = true; // shield finished recharging
       if (buffs.shield > 0 && buffs.shield <= elapsed) { audio.setShield(false); buffs.shield = 0; } // timed shield ended → music back to normal
-      if (buffs.repel > elapsed) { // keep-away field: continuously push nearby nodes outward
-        const fieldR = 230 * dpr * arenaScale;
-        for (const hn of hunters) { const dx = hn.x - player.x, dy = hn.y - player.y, d = Math.hypot(dx, dy) || 1; if (d < fieldR) { const f = (1 - d / fieldR) * 1000 * dpr * dt; hn.kvx = (hn.kvx || 0) + (dx / d) * f; hn.kvy = (hn.kvy || 0) + (dy / d) * f; } }
+      if (buffs.repel > elapsed) { // keep-away field: hold every node outside a clear bubble
+        const fieldR = 235 * dpr * arenaScale;
+        for (const hn of hunters) {
+          const dx = hn.x - player.x, dy = hn.y - player.y, d = Math.hypot(dx, dy) || 1;
+          if (d < fieldR) { const ux = dx / d, uy = dy / d; hn.kvx = (hn.kvx || 0) + ux * 1400 * dpr * dt; hn.kvy = (hn.kvy || 0) + uy * 1400 * dpr * dt; const ease = (fieldR - d) * 0.25; hn.x += ux * ease; hn.y += uy * ease; }
+        }
       }
       // weapon drops — several can sit on the field at once
       if (weaponPickups.length < 3 && elapsed >= nextWeaponDrop) {
@@ -2621,6 +2624,19 @@
       ctx.restore(); ctx.shadowBlur = 0;
     }
 
+
+    // Repel buff — a glowing keep-away bubble with outward ripples
+    if (mode === "arena" && buffs.repel > elapsed && playerAlpha > 0.3) {
+      const fieldR = 235 * dpr * arenaScale;
+      const g = ctx.createRadialGradient(player.x, player.y, fieldR * 0.45, player.x, player.y, fieldR);
+      g.addColorStop(0, "rgba(150,210,255,0)"); g.addColorStop(0.75, "rgba(150,210,255,0.05)"); g.addColorStop(1, "rgba(160,215,255,0.2)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(player.x, player.y, fieldR, 0, 6.283185); ctx.fill();
+      ctx.save(); ctx.lineCap = "round";
+      for (let r = 0; r < 2; r++) { const t = (elapsed * 0.7 + r * 0.5) % 1, rad = fieldR * (0.35 + t * 0.65); ctx.strokeStyle = `rgba(150,210,255,${(1 - t) * 0.35})`; ctx.lineWidth = 2.5 * dpr; ctx.beginPath(); ctx.arc(player.x, player.y, rad, 0, 6.283185); ctx.stroke(); }
+      ctx.strokeStyle = `rgba(180,225,255,${0.45 + 0.2 * Math.sin(elapsed * 5)})`; ctx.lineWidth = 2.5 * dpr;
+      ctx.beginPath(); ctx.arc(player.x, player.y, fieldR, 0, 6.283185); ctx.stroke();
+      ctx.restore();
+    }
 
     // Blade buff — glowing spinning blade + a trailing sweep arc
     if (mode === "arena" && buffs.blade > elapsed && playerAlpha > 0.3) {
