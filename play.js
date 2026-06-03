@@ -352,9 +352,9 @@
     // on-canvas UI scale. Browser zoom shifts devicePixelRatio: zoom-IN pushes it past
     // our dpr cap, zoom-OUT drops it below 1 (UI would go tiny). Compensate both ways.
     const z = window.devicePixelRatio || 1;
-    let zf = Math.max(1, z / dpr);          // zoomed in past the cap → enlarge
-    if (z < 0.6) zf = Math.max(zf, 0.85 / z); // zoomed way out → enlarge so UI stays legible
-    uiScale = Math.max(0.9, Math.min(3.0, (Math.min(w, h) / 780) * zf));
+    let zf = Math.max(1, z / dpr);            // zoomed in past the cap → enlarge
+    if (z < 1) zf = Math.max(zf, Math.min(1.35, 0.9 / z)); // zoomed out → mild enlarge (capped, avoids HUD overlap)
+    uiScale = Math.max(0.9, Math.min(1.8, (Math.min(w, h) / 780) * zf));
     // remap every position to the new dimensions so a mid-run zoom/resize doesn't
     // throw entities out of the (rescaled) coordinate space and break the game.
     // (guarded by oldW so it never runs on the first call, before state exists)
@@ -1323,7 +1323,7 @@
           const ax = hn.x - player.x, ay = hn.y - player.y;
           const proj = Math.max(0, Math.min(blLen, ax * ca + ay * sa));
           const dx = hn.x - (player.x + ca * proj), dy = hn.y - (player.y + sa * proj), reach = blW + hn.r;
-          if (dx * dx + dy * dy < reach * reach) { if (hurtNode(hn, bdmg)) { hn.dead = true; points += KILL_VAL; sliced = true; } const kk = 220 * dpr; hn.vx += tx * kk; hn.vy += ty * kk; } // sliced + flung along the swing
+          if (dx * dx + dy * dy < reach * reach) { hn.dead = true; points += KILL_VAL; sliced = true; const kk = 220 * dpr; hn.kvx = (hn.kvx || 0) + tx * kk; hn.kvy = (hn.kvy || 0) + ty * kk; } // blade instakills + flings along the swing
           else if (ax * ax + ay * ay < (blLen * 1.15) ** 2) { const k = 300 * dpr * dt; hn.vx += tx * k; hn.vy += ty * k; } // tangential swirl
         }
         if (sliced) { showPts(); hunters = hunters.filter((hn) => !hn.dead); shocks.push({ x: player.x + ca * blLen, y: player.y + sa * blLen, t: 0, max: 44 * dpr }); }
