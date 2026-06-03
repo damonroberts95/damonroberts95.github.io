@@ -162,7 +162,7 @@
       mlp = ctx.createBiquadFilter(); mlp.type = "lowpass"; mlp.frequency.value = 8500; mlp.connect(master); // warm, less harsh
       verb = ctx.createConvolver(); verb.buffer = impulse(3.2, 2.4);
       vg = ctx.createGain(); vg.gain.value = 1.0; verb.connect(vg); vg.connect(mlp);
-      music = ctx.createGain(); music.gain.value = 0.34; music.connect(mlp); music.connect(verb);
+      music = ctx.createGain(); music.gain.value = 0.44; music.connect(mlp); music.connect(verb);
       fx = ctx.createGain(); fx.gain.value = 0.34; fx.connect(mlp); fx.connect(verb);
       const len = Math.floor(ctx.sampleRate * 0.5);
       noise = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -491,10 +491,10 @@
   const WEAPONS = {
     dart:   { name: "Dart",   gap: 0.15, spd: 820, r: 5,  count: 1, spread: 0,    pierce: 0, dmg: 3.2, homing: false },
     spread: { name: "Spread", gap: 0.30, spd: 700, r: 5,  count: 3, spread: 0.30, pierce: 0, dmg: 1.6, homing: false },
-    rapid:  { name: "Rapid",  gap: 0.085, spd: 900, r: 4,  count: 1, spread: 0.10, pierce: 0, dmg: 1.0, homing: false },
+    rapid:  { name: "Rapid",  gap: 0.07, spd: 1000, r: 3.5, count: 1, spread: 0.13, pierce: 0, dmg: 1.35, homing: false },
     homing: { name: "Seeker", gap: 0.30, spd: 560, r: 6,  count: 1, spread: 0,    pierce: 0, dmg: 1.9, homing: true },
-    ricochet:{ name: "Ricochet", gap: 0.17, spd: 780, r: 5, count: 1, spread: 0,  pierce: 1, dmg: 2.2, homing: false, bounce: true },
-    mortar: { name: "Missile", gap: 0.5,  spd: 540, r: 4, count: 1, spread: 0,    pierce: 0, dmg: 3, homing: false, explode: true },
+    ricochet:{ name: "Ricochet", gap: 0.32, spd: 660, r: 5, count: 1, spread: 0,  pierce: 1, dmg: 3.2, homing: false, bounce: true },
+    mortar: { name: "Missile", gap: 0.5,  spd: 540, r: 4, count: 1, spread: 0,    pierce: 0, dmg: 5.5, homing: true, explode: true, turn: 1.6 },
     wave:   { name: "Wave",   gap: 0.46, spd: 470, r: 6, count: 1, spread: 0,    pierce: 8, dmg: 3, homing: false },
   };
   const WEAPON_KINDS = ["spread", "rapid", "homing", "ricochet", "mortar", "wave"]; // droppable (dart is the starting weapon)
@@ -518,7 +518,7 @@
       waves: 1,
     };
     if (wk === "spread") { s.count = Math.min(13, b.count + (lvl - 1)); s.spread = b.spread + 0.05 * (lvl - 1); } // more pellets, wider fan
-    else if (wk === "wave") s.waves = 1 + Math.floor((lvl - 1) / 3);    // +1 simultaneous wave every 3 levels
+    // wave stays a single crescent — its reach/arc grow with level (handled in fireWeapon)
     else if (wk === "rapid") s.count = lvl >= 4 ? 2 : 1;                // twin stream at high level
     else if (wk === "homing") s.count = lvl >= 6 ? 2 : 1; // at most two seekers (kept cheap + not OP)
     else if (wk === "ricochet") { s.count = lvl >= 4 ? 2 : 1; s.pierce = b.pierce + Math.floor((lvl - 1) / 2); } // more ricochets + punches through
@@ -534,21 +534,24 @@
     const r = ws.r * (power ? 1.4 : 1) * 1.55 * dpr;
     const pierce = ws.pierce + (power ? 3 : 0);
     const bounce = buffs.bounce > elapsed || WEAPONS[wk].bounce;
-    const dmg = ws.dmg * (power ? 1.5 : 1);
+    const dmg = ws.dmg * (power ? powerMul() : 1);
     let base = Math.atan2(aimY - player.y, aimX - player.x), cone = 0.16, adj = 0;
     for (const hn of hunters) { if (hn.dead) continue; let da = Math.atan2(hn.y - player.y, hn.x - player.x) - base; while (da > Math.PI) da -= 6.283185; while (da < -Math.PI) da += 6.283185; if (Math.abs(da) < cone) { cone = Math.abs(da); adj = da; } }
     for (const b of bosses) { let da = Math.atan2(b.y - player.y, b.x - player.x) - base; while (da > Math.PI) da -= 6.283185; while (da < -Math.PI) da += 6.283185; if (Math.abs(da) < cone) { cone = Math.abs(da); adj = da; } }
-    base += adj * 0.35;
+    base += adj * (wk === "mortar" ? 0.1 : 0.35); // missile barely auto-aims — fires where you point
     const maxed = lvl >= WEAPON_MAXLVL, wcol = WEAPON_COLOR[wk] || "150,255,210";
     const expl = WEAPONS[wk].explode, boom = expl ? (95 + lvl * 8) * dpr * arenaScale : 0;
-    const knock = (110 + lvl * 8) * dpr; // bullets shove surviving nodes (physics w/ the HP system)
+    const knock = (260 + lvl * 16) * dpr; // bullets shove surviving nodes hard (physics w/ the HP system)
     if (wk === "wave") {
-      const wspd = ws.spd * dpr * arenaScale, maxR = 460 * dpr * arenaScale;
-      for (let k = 0; k < ws.waves; k++) arcs.push({ x: player.x, y: player.y, ang: base, age: -k * 0.13, spd: wspd, maxR, half: 0.42, band: (4 + ws.r) * dpr, dmg, rainbow: maxed, hit: new Set(), hitB: new Set() });
+      // single crescent — reach, arc width and band all grow with level
+      const wspd = ws.spd * dpr * arenaScale, maxR = (340 + lvl * 46) * dpr * arenaScale;
+      const half = Math.min(1.0, 0.42 + (lvl - 1) * 0.05);
+      arcs.push({ x: player.x, y: player.y, ang: base, age: 0, spd: wspd, maxR, half, band: (6 + ws.r * 1.2) * dpr, dmg, rainbow: maxed, hit: new Set(), hitB: new Set() });
     } else {
       const homing = WEAPONS[wk].homing, n = ws.count, fan = ws.spread || (n > 1 ? 0.12 : 0), angles = [];
       for (let k = 0; k < n; k++) angles.push(base + (n === 1 ? 0 : (k / (n - 1) - 0.5) * fan) + (Math.random() * 2 - 1) * fan * 0.12);
-      for (const a of angles) bullets.push({ x: player.x, y: player.y, vx: Math.cos(a) * bspd, vy: Math.sin(a) * bspd, life: bounce ? 2.4 : homing ? 2.6 : 1.4, r, pierce, dmg, bounce, homing, explode: expl, boom, knock, spd: bspd, col: wcol, kind: wk, rainbow: maxed, hitB: null });
+      const turn = WEAPONS[wk].turn || 7;
+      for (const a of angles) bullets.push({ x: player.x, y: player.y, vx: Math.cos(a) * bspd, vy: Math.sin(a) * bspd, life: bounce ? 3.8 : homing ? 2.6 : 1.4, r, pierce, dmg, bounce, homing, turn, explode: expl, boom, knock, spd: bspd, col: wcol, kind: wk, rainbow: maxed, hitB: null });
     }
   }
 
@@ -563,6 +566,7 @@
   let biomeFade = 1, prevBiome = null, biomeFadeRate = 1.6; // crossfade between biomes (0→1)
   let pattern = null, prevPattern = null; // subtle background pattern, varies per biome
   let patternDir = 0;                     // random drift direction for the pattern (radians)
+  let pendingPattern = null, pendingDir = 0; // next pattern, applied only when faded to ~invisible
   let patOffX = 0, patOffY = 0;           // continuously accumulated pattern offset (no teleport on dir change)
   let nextBiomeAt = 0;              // classic: time of the next slow biome shift
   const PATTERN_KEYS = ["none", "grid", "dots", "rings", "diag", "weave", "cross", "wave", "hex"];
@@ -674,6 +678,8 @@
   }
   // apply damage; clumped nodes (many same-colour neighbours) shrug off more → tankier in packs
   const hurtNode = (hn, dmg) => { hn.hp -= dmg / (1 + (hn.snb || 0) * 0.12); return hn.hp <= 0; };
+  // Power buff damage multiplier — strength grows with the run (duration stays fixed)
+  const powerMul = () => 1.5 + Math.min(1.6, elapsed * 0.011);
 
   // Missile explosion — an expanding star-bomb-style shock: the front clears nodes it
   // reaches and chips bosses once (dmg). Handled by the shock-kill pass in drawScene.
@@ -792,8 +798,7 @@
     lastBiome = bkey;
     prevBiome = biome; prevPattern = pattern;
     biome = BIOMES[bkey];
-    pattern = PATTERN_KEYS[(Math.random() * PATTERN_KEYS.length) | 0];
-    patternDir = Math.random() * 6.283185; // each biome drifts its pattern a different way
+    queuePattern(); // swap deferred until the pattern fades to ~invisible (no flick)
     biomeFade = fade ? 0 : 1;
     biomeFadeRate = slow ? 0.13 : 1.6; // classic: a long, gentle ~8s crossfade
     audio.setBiome(bkey);
@@ -852,8 +857,7 @@
     bossWave = !!L.boss;
     biome = BIOMES[L.biome] || null;
     prevBiome = null; biomeFade = 0; biomeFadeRate = 1.6; // always fade the biome in
-    pattern = PATTERN_KEYS[(Math.random() * PATTERN_KEYS.length) | 0];
-    patternDir = Math.random() * 6.283185;
+    queuePattern();
     audio.setBiome(L.biome);
     levelEndsAt = L.len;
     banner = { big: L.name, sub: themeColor ? PERSONA_NAME[themeColor] : "All colours", until: 2.4 };
@@ -932,8 +936,8 @@
   // collect a star → expanding shockwave that destroys nodes as it reaches them
   function starBlast() {
     // smaller reach on mobile so it doesn't engulf the whole (small) screen
-    const reach = (MOBILE ? 200 : 340) * dpr * arenaScale;
-    shocks.push({ x: player.x, y: player.y, t: 0, max: reach, rainbow: true, kill: true });
+    const reach = (MOBILE ? 260 : 460) * dpr * arenaScale * (1 + Math.min(1, elapsed / 120)); // bigger blast later in the run
+    shocks.push({ x: player.x, y: player.y, t: 0, max: reach, rainbow: true, kill: true, fat: true });
     audio.sfx("blast");
     star = null;
   }
@@ -972,7 +976,7 @@
     lbStatusEl.textContent = "";
     submitScoreBtn.disabled = false;
     lbSubmitEl.hidden = false; // always show the button; it submits THIS run only
-    document.getElementById("restart-btn").hidden = mode !== "journey"; // "Start over" only in journey
+    document.getElementById("restart-btn").hidden = mode !== "journey" && mode !== "arena"; // "Start over": journey restart / arena weapon select
     const modeName = mode === "waves" ? "Waves" : mode === "journey" ? "Journey" : mode === "arena" ? "Bullet Hell" : "Classic";
     let reach = "";
     if (mode === "waves") reach = "Reached wave " + wave + " · ";
@@ -1257,10 +1261,12 @@
       // away (physics), and grinds bosses it touches
       if (buffs.blade > elapsed) {
         const blLen = 124 * dpr * arenaScale, blW = 26 * dpr;
-        // follows the mouse with momentum — swings toward the aim, overshoots, settles (heavy sword)
-        const aimAng = Math.atan2(aimY - player.y, aimX - player.x);
-        let dA = aimAng - bladeAng; while (dA > Math.PI) dA -= 6.283185; while (dA < -Math.PI) dA += 6.283185;
-        bladeVel = (bladeVel + dA * 75 * dt) * Math.pow(0.025, dt);
+        // physics flail — your movement whips the blade; it coasts (damped) but never drops below idle spin
+        const ta = -Math.sin(bladeAng), tb = Math.cos(bladeAng);
+        const drag = -(player.vx * ta + player.vy * tb) / blLen * 9;
+        bladeVel = bladeVel * Math.pow(0.5, dt) + drag * dt;
+        const idle = 2.6, target = bladeVel >= 0 ? Math.max(idle, bladeVel) : Math.min(-idle, bladeVel);
+        bladeVel += (target - bladeVel) * 1.6 * dt;
         bladeAng += bladeVel * dt;
         const ca = Math.cos(bladeAng), sa = Math.sin(bladeAng), tx = -sa, ty = ca; // tx,ty = swing tangential
         // blade damage scales with time + weapon level; faster swing also bites harder
@@ -1332,18 +1338,21 @@
         if (sp > ms) { hn.vx = (hn.vx / sp) * ms; hn.vy = (hn.vy / sp) * ms; }
       }
       hn.x += hn.vx * dt; hn.y += hn.vy * dt;
+      // smooth bullet knockback — uncapped, decays (steering can't swallow it)
+      if (hn.kvx || hn.kvy) { hn.x += hn.kvx * dt; hn.y += hn.kvy * dt; const kd = Math.pow(0.0009, dt); hn.kvx *= kd; hn.kvy *= kd; }
 
       if (hn.escaping) {
         // remove escapers once fully off-screen
         if (hn.x < -margin || hn.x > w + margin || hn.y < -margin || hn.y > h + margin) hn.dead = true;
-      } else {
-        // keep the swarm on-screen — bounce off the edges (repulsion can't fling them away)
+      } else if (mode !== "arena") {
+        // classic/waves/journey: keep the swarm on-screen — bounce off the edges
         const m = hn.r;
         if (hn.x < m) { hn.x = m; hn.vx = Math.abs(hn.vx) * 0.5; }
         else if (hn.x > w - m) { hn.x = w - m; hn.vx = -Math.abs(hn.vx) * 0.5; }
         if (hn.y < m) { hn.y = m; hn.vy = Math.abs(hn.vy) * 0.5; }
         else if (hn.y > h - m) { hn.y = h - m; hn.vy = -Math.abs(hn.vy) * 0.5; }
       }
+      // arena: free to drift off the edges and float back in (no clamp); their chase pulls them home
       } // end !frozen
 
       // collision with the real player → caught (frozen hunters still kill on contact).
@@ -1433,6 +1442,14 @@
           }
         }
         // splitter: no ranged attack — pure pursuit, bursts into a big swarm on death
+        // apply + decay the smooth knockback (separate from the speed-capped steering)
+        if (boss.kvx || boss.kvy) {
+          boss.x += boss.kvx * dt; boss.y += boss.kvy * dt;
+          const kd = Math.pow(0.0009, dt); boss.kvx *= kd; boss.kvy *= kd;
+          const m = boss.r;
+          if (boss.x < m) boss.x = m; else if (boss.x > w - m) boss.x = w - m;
+          if (boss.y < m) boss.y = m; else if (boss.y > h - m) boss.y = h - m;
+        }
       }
       const bdx2 = player.x - boss.x, bdy2 = player.y - boss.y, brr = boss.r + player.r;
       if (bdx2 * bdx2 + bdy2 * bdy2 < brr * brr && takeHit()) { drawScene(); gameOver(); return; }
@@ -1511,7 +1528,7 @@
         if (found) {
           let cur = Math.atan2(bl.vy, bl.vx);
           let da = Math.atan2(ty - bl.y, tx - bl.x) - cur; while (da > Math.PI) da -= 6.283185; while (da < -Math.PI) da += 6.283185;
-          const turn = 7 * dt; cur += Math.max(-turn, Math.min(turn, da));
+          const turn = (bl.turn || 7) * dt; cur += Math.max(-turn, Math.min(turn, da));
           const sp = bl.spd || Math.hypot(bl.vx, bl.vy);
           bl.vx = Math.cos(cur) * sp; bl.vy = Math.sin(cur) * sp;
         }
@@ -1522,14 +1539,14 @@
         if (bl.y < 0) { bl.y = 0; bl.vy = Math.abs(bl.vy); } else if (bl.y > h) { bl.y = h; bl.vy = -Math.abs(bl.vy); }
         if (bl.life <= 0) { bullets.splice(i, 1); continue; }
       } else if (bl.life <= 0 || bl.x < -30 || bl.x > w + 30 || bl.y < -30 || bl.y > h + 30) { bullets.splice(i, 1); continue; }
-      let spent = false;
+      let spent = false, bounced = false;
       // hunters — destroyed outright (marked dead, filtered later); pierce passes through several.
       // only the 9 grid cells around the bullet are checked, not every hunter.
       const ci = Math.min(bhCols - 1, Math.max(0, (bl.x / bhCell) | 0));
       const ri = Math.min(bhRows - 1, Math.max(0, (bl.y / bhCell) | 0));
-      for (let oy = -1; oy <= 1 && !spent; oy++) {
+      for (let oy = -1; oy <= 1 && !spent && !bounced; oy++) {
         const ny = ri + oy; if (ny < 0 || ny >= bhRows) continue;
-        for (let ox = -1; ox <= 1 && !spent; ox++) {
+        for (let ox = -1; ox <= 1 && !spent && !bounced; ox++) {
           const nx = ci + ox; if (nx < 0 || nx >= bhCols) continue;
           const arr = bhGrid && bhGrid[ny * bhCols + nx]; if (!arr) continue;
           for (let k = 0; k < arr.length; k++) {
@@ -1538,8 +1555,15 @@
             if (dx * dx + dy * dy < rr * rr) {
               if (bl.explode) { explode(bl.x, bl.y, bl.boom, bl.dmg); bulletKills = true; spent = true; break; }
               shocks.push({ x: bl.x, y: bl.y, t: 0, max: 30 * dpr });
-              if (hurtNode(hn, bl.dmg)) { hn.dead = true; bulletKills = true; points += KILL_VAL; shocks.push({ x: bl.x, y: bl.y, t: 0, max: 46 * dpr }); }
-              else { const bs = Math.hypot(bl.vx, bl.vy) || 1, kk = bl.knock || 110 * dpr; hn.vx += (bl.vx / bs) * kk; hn.vy += (bl.vy / bs) * kk; } // shove survivors
+              const killed = hurtNode(hn, bl.dmg);
+              if (killed) { hn.dead = true; bulletKills = true; points += KILL_VAL; shocks.push({ x: bl.x, y: bl.y, t: 0, max: 46 * dpr }); }
+              if (bl.bounce) { // ricochet off the node (chip it, deflect, keep going) — even if it dies
+                const d = Math.hypot(dx, dy) || 1, nx2 = -dx / d, ny2 = -dy / d, dot = bl.vx * nx2 + bl.vy * ny2;
+                bl.vx -= 2 * dot * nx2; bl.vy -= 2 * dot * ny2;
+                bl.x = hn.x + nx2 * (hn.r + br + 1); bl.y = hn.y + ny2 * (hn.r + br + 1);
+                bounced = true; break;
+              }
+              if (!killed) { const bs = Math.hypot(bl.vx, bl.vy) || 1, imp = (bl.knock || 110 * dpr) * 0.7; hn.kvx = (hn.kvx || 0) + (bl.vx / bs) * imp; hn.kvy = (hn.kvy || 0) + (bl.vy / bs) * imp; } // smooth shove on survivors
               if ((bl.pierce = (bl.pierce | 0) - 1) < 0) { spent = true; break; }
             }
           }
@@ -1562,12 +1586,18 @@
         const b = bosses[bi];
         if (!b.maxHp) continue;
         if (bl.hitB && bl.hitB.has(b)) continue;
-        const dx = b.x - bl.x, dy = b.y - bl.y, rr = b.r + br;
+        // swept test against this frame's travel segment so fast bullets can't tunnel the boss
+        const ax = bl.x - bl.vx * dt, ay = bl.y - bl.vy * dt, sx = bl.vx * dt, sy = bl.vy * dt, L2 = sx * sx + sy * sy || 1;
+        let tp = ((b.x - ax) * sx + (b.y - ay) * sy) / L2; tp = tp < 0 ? 0 : tp > 1 ? 1 : tp;
+        const dx = b.x - (ax + sx * tp), dy = b.y - (ay + sy * tp), rr = b.r + br + 5 * dpr;
         if (dx * dx + dy * dy < rr * rr) {
           if (bl.explode) { if (explode(bl.x, bl.y, bl.boom, bl.dmg)) bulletKills = true; spent = true; break; } // Mortar bursts on the boss
           b.hp -= bl.dmg || 1;
           (bl.hitB || (bl.hitB = new Set())).add(b);
           shocks.push({ x: bl.x, y: bl.y, t: 0, max: 38 * dpr });
+          // smooth knockback: feed an impulse into a decaying knock-velocity (applied in the boss loop)
+          const bs = Math.hypot(bl.vx, bl.vy) || 1, imp = (bl.knock || 110 * dpr) * 0.5;
+          b.kvx = (b.kvx || 0) + (bl.vx / bs) * imp; b.kvy = (b.kvy || 0) + (bl.vy / bs) * imp;
           if (b.hp <= 0) {
             popInto(b.x, b.y, b.color, b.kind === "splitter" ? 16 : 9);
             points += BOSS_VAL; showPts();
@@ -2229,17 +2259,22 @@
     }
     ctx.restore();
   }
+  // pick the next pattern + drift direction; applied only once faded out (see drawBiome)
+  function queuePattern() {
+    const np = PATTERN_KEYS[(Math.random() * PATTERN_KEYS.length) | 0], nd = Math.random() * 6.283185;
+    if (pattern === null) { pattern = np; patternDir = nd; } else { pendingPattern = np; pendingDir = nd; }
+  }
   let bgT = 0;
   function drawBiome() {
     bgT += 0.016; // own clock so the wash animates even on menus
-    patOffX += Math.cos(patternDir) * 0.9; patOffY += Math.sin(patternDir) * 0.9; // steady pattern drift (a bit livelier)
+    patOffX += Math.cos(patternDir) * 0.4; patOffY += Math.sin(patternDir) * 0.4; // gentle, slow pattern drift
     if (biomeFade < 1 && prevBiome) paintBiome(prevBiome, 1 - biomeFade);
     const f = biomeFade < 1 ? biomeFade : 1;
     paintBiome(biome, f);
-    // patterns slowly breathe in and out on top of the wash
-    // slow deep breath — mostly present, but occasionally fades all the way out and back
-    const pb = Math.max(0, 0.35 + 0.78 * Math.sin(bgT * 0.055));
-    if (biomeFade < 1 && prevBiome) paintPattern(prevPattern, (1 - biomeFade) * pb);
+    // slow, deep breath — fades fully out for a spell, then back
+    const pb = Math.max(0, 0.25 + 0.95 * Math.sin(bgT * 0.11));
+    // only switch the pattern while it's invisible → the change is never seen
+    if (pendingPattern !== null && f * pb < 0.04) { pattern = pendingPattern; patternDir = pendingDir; pendingPattern = null; }
     paintPattern(pattern, f * pb);
   }
 
@@ -2275,13 +2310,22 @@
       ctx.font = nameFont; ctx.fillStyle = "rgba(255,255,255,0.78)";
       ctx.fillText(name, sx + iconW + igap, h - 110 * dpr);
       ctx.textAlign = "center";
-      // stat line — derived from the current level
-      const ws = weaponStats();
-      const extra = weapon === "spread" ? `${ws.count}× pellet` : weapon === "wave" ? `${ws.waves}× wave` : weapon === "homing" ? `${ws.count}× seek` : weapon === "ricochet" ? "ricochet" : ws.count > 1 ? `${ws.count}× shot` : "";
-      const stats = `DMG ${ws.dmg.toFixed(1)} · ${(1 / ws.gap).toFixed(1)}/s` + (extra ? ` · ${extra}` : "");
+      // stat line — each stat coloured in the colour of whatever buff is boosting it
+      const odv = buffs.overdrive > elapsed, pwr = buffs.power > elapsed, frz = buffs.frenzy > elapsed;
+      const ws = weaponStats(odv ? weaponLvl + 10 : weaponLvl);
+      const eDmg = ws.dmg * (pwr ? powerMul() : 1), eRate = (1 / ws.gap) * (frz ? 2 : 1);
+      const extra = weapon === "spread" ? `${ws.count}× pellet` : weapon === "wave" ? "shockwave" : weapon === "homing" ? `${ws.count}× seek` : weapon === "ricochet" ? "ricochet" : ws.count > 1 ? `${ws.count}× shot` : "";
+      const dmgCol = pwr ? "255,138,96" : odv ? "120,255,255" : "255,255,255";
+      const rateCol = frz ? "255,106,213" : odv ? "120,255,255" : "255,255,255";
+      const dim = "255,255,255";
+      const segs = [[`DMG ${eDmg.toFixed(1)}`, dmgCol, pwr || odv ? 0.95 : 0.42], [" · ", dim, 0.42], [`${eRate.toFixed(1)}/s`, rateCol, frz || odv ? 0.95 : 0.42]];
+      if (extra) segs.push([" · " + extra, dim, 0.42]);
       ctx.font = `600 ${11 * uiScale}px "General Sans", system-ui, sans-serif`;
-      ctx.fillStyle = "rgba(255,255,255,0.42)";
-      ctx.fillText(stats, cx, h - 92 * dpr);
+      ctx.textAlign = "left";
+      let stw = 0; for (const s of segs) stw += ctx.measureText(s[0]).width;
+      let stx = cx - stw / 2;
+      for (const [txt, col, a] of segs) { ctx.fillStyle = `rgba(${col},${a})`; ctx.fillText(txt, stx, h - 92 * dpr); stx += ctx.measureText(txt).width; }
+      ctx.textAlign = "center";
       // buffs
       const active = [];
       if (shieldActive) active.push(["SHIELD", "150,225,255"]);
@@ -2437,13 +2481,15 @@
       }
       ctx.beginPath();
       ctx.arc(s.x, s.y, rad, 0, 6.283185);
-      ctx.lineWidth = (s.rainbow || s.ice ? 5 : 2) * dpr;
+      ctx.lineWidth = (s.fat ? 14 : s.rainbow || s.ice ? 5 : 2) * dpr;
       ctx.strokeStyle = s.rainbow
         ? `hsla(${(s.t * 360) | 0},100%,65%,${(1 - s.t) * 0.9})`
         : s.ice
         ? `rgba(150,225,255,${(1 - s.t) * 0.85})`
         : `rgba(255,248,120,${(1 - s.t) * 0.5})`;
+      if (s.fat) { ctx.shadowColor = `hsla(${(s.t * 360) | 0},100%,65%,0.8)`; ctx.shadowBlur = 18 * dpr; }
       ctx.stroke();
+      if (s.fat) ctx.shadowBlur = 0;
     }
 
     // links — dark underlay first so they stay visible over the bright yellow wash,
@@ -2577,8 +2623,6 @@
     if (mode === "arena" && buffs.blade > elapsed && playerAlpha > 0.3) {
       const blLen = 124 * dpr * arenaScale, ca = Math.cos(bladeAng), sa = Math.sin(bladeAng);
       ctx.save(); ctx.lineCap = "round";
-      ctx.strokeStyle = "rgba(230,245,255,0.16)"; ctx.lineWidth = 11 * dpr;
-      ctx.beginPath(); ctx.arc(player.x, player.y, blLen * 0.9, bladeAng - 1.3, bladeAng); ctx.stroke();
       ctx.strokeStyle = "rgba(238,249,255,0.96)"; ctx.lineWidth = 4 * dpr;
       ctx.shadowColor = "rgba(200,235,255,0.9)"; ctx.shadowBlur = 10 * dpr;
       ctx.beginPath(); ctx.moveTo(player.x, player.y); ctx.lineTo(player.x + ca * blLen, player.y + sa * blLen); ctx.stroke();
@@ -2832,7 +2876,7 @@
       if (ttsVoice) u.voice = ttsVoice;
       u.rate = 0.82 + Math.random() * 0.04;  // slower, measured
       u.pitch = 1.45 + Math.random() * 0.06; // high, bright announcer
-      u.volume = 1;
+      u.volume = 0.7;
       u.onend = u.onerror = () => speakNext();
       synth.speak(u);
     } catch { speakNext(); }
@@ -2849,7 +2893,10 @@
   muteEl.addEventListener("click", toggleMute);
   startPanel.querySelectorAll(".mode-btn[data-mode]").forEach((b) => b.addEventListener("click", () => chooseMode(b.dataset.mode)));
   document.getElementById("retry-btn").addEventListener("click", () => { journeyTime = 0; journeyPts = 0; start(); }); // continue after death → score from zero
-  document.getElementById("restart-btn").addEventListener("click", () => { journeyIdx = 0; journeyTime = 0; journeyPts = 0; start(); }); // journey from level 1
+  document.getElementById("restart-btn").addEventListener("click", () => {
+    if (mode === "arena") { overPanel.hidden = true; document.body.classList.remove("playing"); arenaStartPanel.hidden = false; return; } // back to weapon select
+    journeyIdx = 0; journeyTime = 0; journeyPts = 0; start();
+  });
   document.getElementById("plot-begin").addEventListener("click", start);
   document.getElementById("plot-back").addEventListener("click", backToMenu);
   // bullet hell weapon select

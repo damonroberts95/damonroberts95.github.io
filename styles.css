@@ -14,6 +14,10 @@
 
 /* ---------- 1. VARIABLES — edit colours/fonts here ---------- */
 :root {
+  /* declare the site as already-dark so Android/Chrome "force dark" leaves it
+     alone — otherwise auto-dark recolours the #egg "D" grey while AMON stays white */
+  color-scheme: dark;
+
   --bg:        #08070d;   /* page background (near-black) */
   --bg-soft:   #11101a;   /* raised surfaces (link cards)  */
   --text:      #f4f2fb;   /* main text */
