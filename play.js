@@ -516,7 +516,7 @@
       name: b.name,
       gap: Math.max(0.04, b.gap * Math.pow(0.89, lvl - 1)),
       spd: b.spd * (1 + 0.06 * (lvl - 1)),
-      r:   b.r * (1 + 0.10 * (lvl - 1)),     // bigger bullets every level
+      r:   b.r * (1 + 0.05 * (lvl - 1)),     // bigger bullets every level (gentle so high levels don't fill the screen)
       count: b.count,
       spread: b.spread,
       pierce: b.pierce,
@@ -537,7 +537,7 @@
   function fireWeapon(wk, lvl) {
     const ws = weaponStats(lvl, wk), power = buffs.power > elapsed;
     const bspd = ws.spd * dpr * arenaScale;
-    const r = ws.r * (power ? 1.4 : 1) * 1.55 * dpr;
+    const r = ws.r * (power ? 1.4 : 1) * 1.3 * dpr;
     const pierce = ws.pierce + (power ? 3 : 0);
     const bounce = buffs.bounce > elapsed || WEAPONS[wk].bounce;
     const dmg = ws.dmg * (power ? powerMul() : 1);
