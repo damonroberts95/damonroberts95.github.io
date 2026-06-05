@@ -110,6 +110,7 @@
     }
     .btn:hover { border-color: var(--accent); box-shadow: 0 0 24px rgba(236,72,153,0.3); }
     .btn:active { transform: scale(0.97); }
+    .btn[hidden] { display: none; }   /* .btn sets display → overrides UA [hidden]; restore it (else "Start over" shows in Classic/Waves) */
     /* leaderboard (game-over panel) */
     .lb { margin: 20px auto 6px; max-width: 320px; text-align: left; }
     .lb__head {

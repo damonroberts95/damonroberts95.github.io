@@ -290,11 +290,13 @@
       while (nextNote < ahead) { scheduleStep(step, nextNote); nextNote += 60 / curBPM() / 4; step++; }
     }
 
-    // ramp the master brightness + reverb to the current biome profile
+    // ramp the master brightness + reverb to the current biome profile.
+    // long time-constant → the tonal shift glides over several seconds (slow musical
+    // crossfade) instead of snapping when the biome changes.
     function applyProf() {
       if (!ctx) return;
-      mlp.frequency.setTargetAtTime(bright ? Math.max(prof.bright, 14000) : prof.bright, ctx.currentTime, 0.4);
-      if (vg) vg.gain.setTargetAtTime(prof.reverb, ctx.currentTime, 0.4);
+      mlp.frequency.setTargetAtTime(bright ? Math.max(prof.bright, 14000) : prof.bright, ctx.currentTime, 2.5);
+      if (vg) vg.gain.setTargetAtTime(prof.reverb, ctx.currentTime, 2.5);
     }
 
     return {
@@ -1098,8 +1100,8 @@
       const into = Math.max(0, st - waveRampStart); // active secs into the current wave
       const baseS = 90 + Math.min(120, (wave - 1) * 8);
       const baseA = 200 + Math.min(180, (wave - 1) * 12);
-      maxSpeed = (baseS + into * (MOBILE ? 1.2 : 1.5)) * dpr * sp * arenaScale;
-      accel = (baseA + into * (MOBILE ? 2.4 : 3)) * dpr * sp * arenaScale;
+      maxSpeed = (baseS + into * (MOBILE ? 1.45 : 1.5)) * dpr * sp * arenaScale; // mobile waves nudged up (was too easy)
+      accel = (baseA + into * (MOBILE ? 2.9 : 3)) * dpr * sp * arenaScale;
     } else if (mode === "arena") {
       // Arena: gentle base ramp, but a stronger weapon ramps the threat with it
       const wdiff = (1 + (weaponLvl - 1) * 0.05) * (1 + surge * 0.2); // weapon level + surge → tougher swarm
@@ -1114,7 +1116,8 @@
     }
     // The Hive (yellow, slow clusterers) packs more nodes — bigger cap + faster build
     const hive = themeColor === "255,248,120";
-    const cap = Math.round((MOBILE ? 32 : mode === "arena" ? 270 : 130) * arenaScale * (hive ? 1.45 : 1)), rate = (MOBILE ? 0.6 : 1.15) * (hive ? 1.5 : 1);
+    const wmob = mode === "waves" && MOBILE; // waves felt too easy on phones → bigger swarm + faster build
+    const cap = Math.round((wmob ? 60 : MOBILE ? 32 : mode === "arena" ? 270 : 130) * arenaScale * (hive ? 1.45 : 1)), rate = (wmob ? 0.95 : MOBILE ? 0.6 : 1.15) * (hive ? 1.5 : 1);
     // Journey resets elapsed each level, so it would re-ramp from sparse every time.
     // Start fuller, ramp faster, and escalate the floor with the level number.
     const jBase = mode === "journey" ? 4 + journeyIdx : mode === "waves" ? 6 : mode === "arena" ? 26 + (weaponLvl - 1) * 4 : 0;
