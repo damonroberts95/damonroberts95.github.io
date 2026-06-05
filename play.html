@@ -8,8 +8,7 @@
   <meta name="theme-color" content="#08070d" />
   <meta name="robots" content="noindex" />
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
-  <link rel="preconnect" href="https://api.fontshare.com" crossorigin />
-  <link href="https://api.fontshare.com/v2/css?f[]=clash-display@600,700&f[]=general-sans@400,500,600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="fonts.css" />
   <link rel="stylesheet" href="styles.css" />
   <style>
     /* ---- NODE RUN — dodge game (easter egg) ---- */
@@ -57,6 +56,7 @@
     }
     .hud__best { color: var(--muted); font-size: 0.86rem; text-align: right; }
     .hud__best b { color: var(--text); font-weight: 600; }
+    body.idle .hud, body.idle .pause-btn { display: none !important; } /* idle/screensaver: no HUD chrome (beats body.playing .pause-btn) */
 
     /* overlays */
     .panel {
@@ -253,6 +253,7 @@
         <button class="btn mode-btn mode-btn--desktop" data-mode="arena"><b>Bullet Hell</b><span>Desktop only. WASD to move, mouse to aim &amp; shoot. Weapons, buffs, bosses.</span></button>
       </div>
       <button class="btn btn--sm btn--ghost" id="help-btn">How to play</button>
+      <button class="btn btn--sm btn--ghost" id="idle-btn" style="margin-left:10px">Idle</button>
     </div>
   </div>
 
@@ -307,7 +308,7 @@
   <div class="panel" id="plot" hidden>
     <div class="panel__card">
       <p class="plot-stage" id="plot-stage">Level 1 of 8</p>
-      <h1 id="plot-name" style="font-size:clamp(2rem,8vw,3.2rem)">Awakening</h1>
+      <h1 id="plot-name" style="font-size:clamp(2rem,8vw,3.2rem);text-transform:uppercase">Awakening</h1>
       <p class="big" id="plot-text"></p>
       <button class="btn" id="plot-begin">Begin</button>
       <button class="btn btn--sm btn--ghost" id="plot-back" style="margin-left:10px">Back</button>
@@ -320,6 +321,18 @@
     <div class="panel__card">
       <h1 class="win-title">FREEDOM</h1>
       <p class="big" id="win-text">You tear past the core and out beyond the edge of the grid. The Lattice goes dark behind you &mdash; no chasers, no webs, no walls. Just open space, and you, still running. You made it through the whole Lattice.</p>
+      <p class="hint" id="win-verdict">&nbsp;</p>
+
+      <div class="lb">
+        <div class="lb__head" id="win-lb-head">Journey leaderboard</div>
+        <ol class="lb__list" id="win-board"><li class="lb__empty">&mdash;</li></ol>
+        <div class="lb__submit" id="win-lb-submit" hidden>
+          <input id="win-initials" maxlength="3" placeholder="AAA" autocomplete="off" spellcheck="false" />
+          <button class="btn btn--sm" id="win-submit">Submit</button>
+          <span class="lb__status" id="win-status"></span>
+        </div>
+      </div>
+
       <button class="btn" id="win-menu">Back to menu</button>
     </div>
   </div>

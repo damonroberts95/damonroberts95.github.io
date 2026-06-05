@@ -30,6 +30,12 @@
   const submitScoreBtn = document.getElementById("submit-score");
   const lbStatusEl = document.getElementById("lb-status");
   const lbHeadEl = document.getElementById("lb-head");
+  const winVerdictEl = document.getElementById("win-verdict");
+  const winBoardEl = document.getElementById("win-board");
+  const winLbSubmitEl = document.getElementById("win-lb-submit");
+  const winInitialsEl = document.getElementById("win-initials");
+  const winSubmitBtn = document.getElementById("win-submit");
+  const winStatusEl = document.getElementById("win-status");
   const plotPanel = document.getElementById("plot");
   const plotStageEl = document.getElementById("plot-stage");
   const plotNameEl = document.getElementById("plot-name");
@@ -49,6 +55,8 @@
   ];
   const LINK = "199,116,232";
   const LINK_DIST = 94;    // web length (scaled down further on mobile)
+  const SCATTER = "120,196,255"; // blue Scatterers — get a longer web than other colours
+  const SCAT_WEB = 1.6;          // scatterer-scatterer web reach multiplier
   const LINK_W = 3.5;   // px: drawn web thickness
   const LETHAL = 6;     // px: extra kill-band around the web line + node
   const JOLT_R = 70;    // px: crowding radius
@@ -72,7 +80,7 @@
     "255,106,213": { kind: "ambush",  spd: 1.18, acc: 1.45, coh: 0.4 },
     "34,211,238":  { kind: "erratic", spd: 1.35, acc: 1.60, coh: 0.1 },
     "255,138,96":  { kind: "shy",     spd: 1.05, acc: 1.05, coh: 0.6 },
-    "120,196,255": { kind: "scatter", spd: 0.68, acc: 0.52, coh: 0.9 },
+    "120,196,255": { kind: "scatter", spd: 0.48, acc: 0.38, coh: 0.9 },
     "255,248,120": { kind: "cluster", spd: 0.52, acc: 0.34, coh: 1.5, split: 6 },
   };
 
@@ -90,7 +98,7 @@
      Supersaw voices + reverb + filter envelopes; tempo rises with
      elapsed so the music tracks the game's pace. ---- */
   function makeAudio() {
-    let ctx = null, master, mlp, music, fx, verb, vg, noise, muted = false, playing = false, step = 0, nextNote = 0, timer = null, bright = false;
+    let ctx = null, master, mlp, music, fx, verb, vg, noise, muted = false, playing = false, step = 0, nextNote = 0, timer = null, bright = false, triumph = false;
     const CHORDS = [
       { root: 57, ivs: [0, 3, 7, 10] }, // Am7
       { root: 53, ivs: [0, 4, 7, 11] }, // Fmaj7
@@ -111,9 +119,9 @@
       // deep, dark, spacious
       void:  { chords: [{ root: 45, ivs: [0, 3, 7, 10] }, { root: 48, ivs: [0, 3, 7, 10] }, { root: 50, ivs: [0, 3, 7, 10] }, { root: 43, ivs: [0, 3, 7, 10] }],
                transpose: -12, bright: 4600, reverb: 1.7, bpmMul: 0.88, leadType: "sine", leadCut: 1300, sparkle: false },
-      // tense, smouldering
-      ember: { chords: [{ root: 53, ivs: [0, 4, 7, 10] }, { root: 56, ivs: [0, 3, 7, 10] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 55, ivs: [0, 4, 7, 10] }],
-               transpose: 0, bright: 7200, reverb: 0.9, bpmMul: 1.06, leadType: "sawtooth", leadCut: 2400, sparkle: false },
+      // creepy, crawling — the Hive: diminished/tritone tension, hollow square lead, murky + slow
+      ember: { chords: [{ root: 53, ivs: [0, 3, 6, 10] }, { root: 54, ivs: [0, 3, 6, 9] }, { root: 51, ivs: [0, 3, 6, 10] }, { root: 56, ivs: [0, 3, 6, 9] }],
+               transpose: -5, bright: 5600, reverb: 1.5, bpmMul: 0.95, leadType: "square", leadCut: 1900, sparkle: false },
       // crystalline + jittery — brighter, faster, a glassy saw lead (Erratics)
       ice:   { chords: [{ root: 60, ivs: [0, 4, 7, 11] }, { root: 62, ivs: [0, 4, 7, 11] }, { root: 59, ivs: [0, 3, 7, 10] }, { root: 57, ivs: [0, 4, 7, 11] }],
                transpose: 0, bright: 13000, reverb: 1.3, bpmMul: 1.12, leadType: "sawtooth", leadCut: 6800, sparkle: true },
@@ -123,9 +131,9 @@
       // edgy, acidic minor
       toxic: { chords: [{ root: 55, ivs: [0, 3, 7, 10] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 53, ivs: [0, 3, 7, 10] }, { root: 50, ivs: [0, 3, 7, 10] }],
                transpose: 0, bright: 8000, reverb: 0.95, bpmMul: 1.05, leadType: "square", leadCut: 2600, sparkle: false },
-      // lush, dreamy, romantic
-      rose:  { chords: [{ root: 53, ivs: [0, 4, 7, 11] }, { root: 57, ivs: [0, 3, 7, 10] }, { root: 55, ivs: [0, 4, 7, 10] }, { root: 60, ivs: [0, 4, 7, 11] }],
-               transpose: 0, bright: 9200, reverb: 1.35, bpmMul: 1.0, leadType: "triangle", leadCut: 3000, sparkle: false },
+      // dramatic, predatory — the Ambush: tense minor with a dominant pull + a sharp saw lead
+      rose:  { chords: [{ root: 57, ivs: [0, 3, 7, 10] }, { root: 53, ivs: [0, 4, 7, 11] }, { root: 55, ivs: [0, 3, 7, 10] }, { root: 52, ivs: [0, 4, 7, 10] }],
+               transpose: 0, bright: 9800, reverb: 1.3, bpmMul: 1.14, leadType: "sawtooth", leadCut: 4200, sparkle: false },
       // finale — driving, dramatic, tense minor with a hard saw lead
       confluence: { chords: [{ root: 45, ivs: [0, 3, 7, 10] }, { root: 53, ivs: [0, 4, 7, 10] }, { root: 50, ivs: [0, 3, 7, 11] }, { root: 52, ivs: [0, 4, 7, 10] }],
                transpose: 0, bright: 13500, reverb: 1.25, bpmMul: 1.22, leadType: "sawtooth", leadCut: 5600, sparkle: true },
@@ -135,9 +143,17 @@
     const frozenNow = () => elapsed < frozenUntil;
     // crawls during freeze, very slow on menu/loss, eases up while playing.
     // Arena (Bullet Hell) runs a faster, fixed-ish club tempo (Wipeout-style techno).
+    // idle tempo breathes: a gentle section bump (chorus up, bridge down) + a slow LFO so the
+    // pace cycles up AND down over the song rather than sitting flat. Still biome-flavoured.
+    const idleBPM = () => {
+      const pos = ((Math.floor(step / 16) % 32) + 32) % 32; // 32-bar song
+      const sec = pos < 4 ? 0.95 : pos < 16 ? 1.0 : pos < 24 ? 1.08 : 0.93; // intro / verse / chorus / bridge
+      return 100 * prof.bpmMul * sec * (1 + 0.07 * Math.sin(step * 0.004)); // long ~3-min tempo swell, up + down
+    };
     const curBPM = () => (frozenNow() ? 28 : !running ? 40
       : mode === "arena" ? Math.min(140, 126 + elapsed * 0.12)
-      : Math.min(132, 84 + elapsed * 0.6) * prof.bpmMul);
+      : mode === "idle" ? idleBPM()
+      : Math.min(132, 84 + elapsed * 0.6) * prof.bpmMul * (triumph ? 1.2 : 1)); // power-cache wave → quicker, upbeat
 
     // Wipeout-flavoured arena pattern data: driving minor changes + a rolling 16th
     // acid bassline (semitone offsets from the chord root; -1 = rest).
@@ -243,8 +259,75 @@
       if ((prof.sparkle || b % 4 === 2) && b % 2 === 0) { const n = c.root + c.ivs[ARP[b] % c.ivs.length] + 24 + TR; synth(mtof(n) * pitch, t, 0.16, { type: "square", gain: 0.03, detune: 4, voices: 1, cut: Math.max(6200, prof.leadCut), q: 2, attack: 0.005 }); } // shimmer (more in sparkly biomes)
     }
 
+    // idle "song" motifs: [stepInBar, chordToneIndex, octaveOffset]
+    const IDLE_RIFF = [[0, 0, 12], [3, 2, 12], [6, 1, 12], [8, 2, 12], [11, 3, 12], [14, 1, 12]];
+    const IDLE_HOOK = [[0, 2, 24], [2, 3, 24], [4, 4, 24], [7, 3, 24], [8, 1, 24], [10, 2, 24], [12, 4, 24], [14, 5, 24]];
+    const idleRnd = (seed) => { const x = Math.sin(seed * 12.9898 + 7.13) * 43758.5453; return x - Math.floor(x); }; // stable per-seed wobble
+    // idle/screensaver: a longer, song-structured generative track — a 32-bar form of
+    // intro → verse → chorus → bridge with riffs, a chorus hook + harmony, a wandering
+    // solo, fills + risers, and tasteful per-bar variation (note drops, octave lifts,
+    // grace turns) so it stays fresh without getting jarring. Biome profile drives chords,
+    // lead timbre, brightness and tempo so each biome colours the song.
+    function scheduleIdle(s, t) {
+      const set = prof.chords, tr = prof.transpose;
+      const bar = Math.floor(s / 16), b = s % 16, pos = ((bar % 32) + 32) % 32; // 32-bar song
+      const intro = pos < 4, chorus = pos >= 16 && pos < 24, bridge = pos >= 24;
+      const verse = !intro && !chorus && !bridge;            // bars 4–15: a long, evolving verse
+      const lastBar = pos === 15 || pos === 31;              // section turnaround → fills
+      const c = set[(bridge ? bar + 2 : bar) % set.length];  // bridge rotates the progression for contrast
+      const root = c.root + tr, ivs = c.ivs;
+      const tone = (i, oct) => mtof(root + ivs[((i % ivs.length) + ivs.length) % ivs.length] + oct);
+      // kick — four-on-the-floor in verse/chorus, half-time in the bridge, none in intro
+      if (!intro && b % 4 === 0 && (!bridge || b % 8 === 0)) {
+        const k = ctx.createOscillator(), g = ctx.createGain();
+        k.type = "sine"; k.frequency.setValueAtTime(95, t); k.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(chorus ? 0.34 : 0.26, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+        k.connect(g); g.connect(music); k.start(t); k.stop(t + 0.32);
+        k.onended = () => { try { k.disconnect(); g.disconnect(); } catch {} };
+      }
+      if ((verse || chorus) && (b === 4 || b === 12)) noiseHit(t, 0.18, chorus ? 0.16 : 0.12, fx, 1600); // backbeat clap
+      if (!intro && b % 2 === 1) noiseHit(t, b % 4 === 3 ? 0.05 : 0.025, 0.016, music, 9500);             // hats
+      if (lastBar && b >= 12) noiseHit(t, 0.06, 0.05, fx, 380 + (b - 12) * 320);                          // tom fill on the turnaround
+      // bass — walks a little in the chorus for groove
+      if (b === 0 || b === 8 || (chorus && (b === 6 || b === 14))) synth(mtof(root - 12 + (chorus && b === 14 ? 7 : 0)), t, b === 0 ? 1.2 : 0.7, { gain: 0.24, detune: 6, voices: 2, cut: 460, q: 4, attack: 0.03, sub: true });
+      // pad (chord) — fuller/longer in chorus + bridge
+      if (b === 0) ivs.forEach((iv) => synth(mtof(root + iv), t, bridge ? 3.4 : chorus ? 2.6 : 2.0, { gain: chorus ? 0.05 : 0.04, detune: 20, voices: 3, cut: chorus ? 1800 : 1300, q: 1.2, attack: bridge ? 1.2 : 0.6 }));
+      // long drone bed every two bars
+      if (s % 32 === 0) synth(mtof(root - 12), t, 6.4, { gain: 0.04, detune: 26, voices: 3, cut: 900, q: 1.0, attack: 1.8 });
+      // gentle continuous arp (signals travelling the links)
+      synth(tone(b * 3, 12), t, 0.16, { type: prof.leadType, gain: 0.025, detune: 4, voices: 1, cut: prof.leadCut * 0.85, q: 7, attack: 0.005 });
+      // verse/chorus riff — biome lead timbre, with tasteful per-bar variation
+      if (verse || chorus) for (const r of IDLE_RIFF) if (r[0] === b) {
+        if (idleRnd(bar * 7 + b) < 0.12) continue;                       // occasionally drop a note → space to breathe
+        const oct = r[2] + (idleRnd(bar * 3 + 1) < 0.28 ? 12 : 0);       // sometimes lift the phrase an octave
+        synth(tone(r[1], oct), t, 0.42, { type: prof.leadType, gain: 0.07, detune: 10, voices: 2, cut: prof.leadCut, q: 5, attack: 0.01 });
+      }
+      // second half of the verse (bars 10–15): a wandering solo over the chord tones
+      if (verse && pos >= 10 && b % 2 === 0 && idleRnd(s) < 0.6) {
+        const deg = Math.floor(idleRnd(s * 1.7) * ivs.length * 2);       // random chord tone, up to an octave up
+        synth(tone(deg, 12), t, 0.3, { type: prof.leadType, gain: 0.05, detune: 7, voices: 2, cut: prof.leadCut, q: 4, attack: 0.01 });
+      }
+      // chorus hook + a third of harmony + shimmer + a soaring high counter-melody
+      if (chorus) {
+        for (const r of IDLE_HOOK) if (r[0] === b) {
+          synth(tone(r[1], r[2]), t, 0.5, { type: "triangle", gain: 0.07, detune: 6, voices: 2, cut: 7000, q: 2, attack: 0.01 });
+          synth(tone(r[1] + 2, r[2]), t, 0.5, { type: "sine", gain: 0.04, detune: 5, voices: 2, cut: 6000, q: 2, attack: 0.02 });
+        }
+        if (b % 4 === 2) synth(tone(ARP[(b + bar) % ARP.length] + 4, 24), t, 0.6, { type: "sine", gain: 0.035, detune: 4, voices: 2, cut: 8000, q: 2, attack: 0.04 }); // counter-melody
+        if (b % 2 === 0) synth(tone(ARP[b], 24), t, 0.18, { type: "square", gain: 0.03, detune: 4, voices: 1, cut: 9000, q: 2, attack: 0.005 }); // shimmer
+      }
+      // bridge: airy, sparse counter-arp + the occasional bell
+      if (bridge && b % 2 === 0) synth(tone(ARP[(b + bar) % ARP.length], 12), t, 0.6, { type: "sine", gain: 0.04, detune: 8, voices: 2, cut: 3000, q: 2, attack: 0.08 });
+      if (bridge && b === 6 && idleRnd(bar) < 0.5) synth(tone(2, 24), t, 0.8, { type: "sine", gain: 0.035, detune: 3, voices: 1, cut: 7000, q: 1.5, attack: 0.02 });
+      // grace turn at the very end of a phrase (every 4 bars) → a little melodic lift
+      if (pos % 4 === 3 && b >= 13) synth(tone(b - 13, 12), t, 0.16, { type: prof.leadType, gain: 0.04, detune: 5, voices: 1, cut: prof.leadCut, q: 5, attack: 0.005 });
+      // riser sweep through the last bar before the chorus (bar 15)
+      if (pos === 15 && b >= 8) noiseHit(t, 0.12, 0.01 + (b - 8) * 0.002, fx, 2000 + (b - 8) * 600);
+    }
+
     function scheduleStep(s, t) {
       if (mode === "arena") return scheduleArena(s, t);
+      if (mode === "idle") return scheduleIdle(s, t);
       const set = prof.chords, tr = prof.transpose;
       const c = set[Math.floor(s / 16) % set.length], b = s % 16;
       const pitch = frozenNow() ? 0.5 : 1; // drop an octave while frozen (deep + woozy)
@@ -277,8 +360,8 @@
         const seq = c.root + c.ivs[(b * 3) % c.ivs.length] + 12 + tr;
         synth(mtof(seq) * pitch, t, 0.16, { type: prof.leadType, gain: 0.03, detune: 4, voices: 1, cut: prof.leadCut * 0.85, q: 7, attack: 0.005 });
       }
-      // shield active OR a sparkly biome → bright shimmer layer an octave up
-      if ((bright || prof.sparkle) && b % 2 === 0) {
+      // shield active, a sparkly biome, OR a power-cache wave → bright shimmer layer an octave up
+      if ((bright || triumph || prof.sparkle) && b % 2 === 0) {
         const note = c.root + c.ivs[ARP[b] % c.ivs.length] + 24 + tr;
         synth(mtof(note) * pitch, t, 0.3, { type: "sine", gain: 0.05, detune: 4, voices: 2, cut: 9000, q: 1, attack: 0.01 });
       }
@@ -295,8 +378,9 @@
     // crossfade) instead of snapping when the biome changes.
     function applyProf() {
       if (!ctx) return;
-      mlp.frequency.setTargetAtTime(bright ? Math.max(prof.bright, 14000) : prof.bright, ctx.currentTime, 2.5);
-      if (vg) vg.gain.setTargetAtTime(prof.reverb, ctx.currentTime, 2.5);
+      const tc = mode === "idle" ? 8 : mode === "arena" ? 0.4 : 3.3; // idle ~24s glide; others ~10s; arena = original snappy 0.4 (untouched)
+      mlp.frequency.setTargetAtTime(bright ? Math.max(prof.bright, 14000) : prof.bright, ctx.currentTime, tc);
+      if (vg) vg.gain.setTargetAtTime(prof.reverb, ctx.currentTime, tc);
     }
 
     return {
@@ -304,7 +388,8 @@
       startMusic() { ensure(); applyProf(); if (playing) return; playing = true; step = 0; nextNote = ctx.currentTime + 0.1; timer = setInterval(tick, 25); },
       setBiome(key) { prof = PROFILES[key] || PROFILES.default; applyProf(); },
       sfx(name) {
-        if (!ctx) return; const t = ctx.currentTime;
+        if (!ctx || mode === "idle") return; // idle/screensaver: music only, no sound-effects
+        const t = ctx.currentTime;
         if (name === "gem") {                 // rising shimmer arpeggio
           [0, 4, 7, 12].forEach((iv, i) => synth(mtof(72 + iv), t + i * 0.045, 0.22, { type: "triangle", gain: 0.2, detune: 6, voices: 2, cut: 6500, q: 3, dest: fx }));
         } else if (name === "blast") {        // riser + boom + noise burst
@@ -328,7 +413,8 @@
         }
       },
       toggleMute() { if (!master) return false; muted = !muted; master.gain.setTargetAtTime(muted ? 0 : 0.8, ctx.currentTime, 0.02); return muted; },
-      setShield(on) { bright = on; if (mlp) mlp.frequency.setTargetAtTime(on ? 16000 : prof.bright, ctx.currentTime, 0.12); },
+      setShield(on) { bright = on; if (mlp) mlp.frequency.setTargetAtTime(on || triumph ? 16000 : prof.bright, ctx.currentTime, 0.12); },
+      setTriumph(on) { triumph = on; if (mlp) mlp.frequency.setTargetAtTime(on || bright ? 16000 : prof.bright, ctx.currentTime, 0.3); }, // power-cache wave → brighter + (via curBPM) quicker
     };
   }
 
@@ -338,7 +424,7 @@
   const LINK_SCALE = MOBILE ? 0.6 : 1;   // shorter webs on small screens → fewer lethal lines, more gaps
   const GROUP_SCALE = MOBILE ? 0.7 : 1;  // tighter clumps on small screens → nodes ball up, opening dodge lanes
 
-  let w, h, dpr = 1, linkD2, arenaScale = 1, uiScale = 1;
+  let w, h, dpr = 1, linkD2, scatLinkD2, arenaScale = 1, uiScale = 1;
   function resize() {
     const oldW = w, oldH = h;
     dpr = Math.min(window.devicePixelRatio || 1, 1.5);
@@ -351,6 +437,7 @@
     // motion and web reach with the viewport so difficulty stays consistent.
     arenaScale = Math.max(0.8, Math.min(2, Math.min(innerWidth, innerHeight) / 820));
     linkD2 = (LINK_DIST * LINK_SCALE * arenaScale * dpr) ** 2;
+    scatLinkD2 = linkD2 * SCAT_WEB * SCAT_WEB; // scatterer-scatterer webs reach further
     uiScale = Math.max(0.9, Math.min(2, Math.min(w, h) / 780));
     // remap every position to the new dimensions so a mid-run zoom/resize doesn't
     // throw entities out of the (rescaled) coordinate space and break the game.
@@ -369,6 +456,8 @@
       for (const b of bosses) { b.x *= sx; b.y *= sy; }
       for (const s of shocks) { s.x *= sx; s.y *= sy; }
       sc(star); sc(ice); sc(shield); sc(shooter);
+      // NB: do NOT rescale patOffX/Y here — the pattern phase is dpr-normalised at draw
+      // (see paintPattern), so leaving the CSS-px offset alone keeps it from rephasing on resize.
       if (anchor) { anchor.fx *= sx; anchor.fy *= sy; anchor.px *= sx; anchor.py *= sy; }
     }
   }
@@ -388,6 +477,7 @@
     if (e.target && e.target.closest && e.target.closest("button, a, .mute")) return;
     if (e.timeStamp - lastDown < 120) return;
     lastDown = e.timeStamp;
+    if (mode === "idle" && running) { backToMenu(); return; } // tap/click anywhere to leave the screensaver
     if (paused) { togglePause(); return; } // tap anywhere (not a control) to resume
     const t = e.touches ? e.touches[0] : e;
     if (!t) return;
@@ -396,6 +486,7 @@
       : null;
   }
   function movePointer(e) {
+    if (mode === "idle") return; // no cursor control in idle — the player drifts on its own
     const t = e.touches ? e.touches[0] : e;
     if (!t) return;
     if (mode === "arena") { aimX = t.clientX * dpr; aimY = t.clientY * dpr; return; } // arena: mouse aims, WASD moves
@@ -436,7 +527,8 @@
   let hunters = [];
   let hunterId = 0;           // stable per-node id, for tracking link ages
   let links = []; // {a,b,al,same} built in physics, drawn in drawScene (one pass, not two)
-  let linkAges = new Map();   // "idA|idB" -> seconds that web has existed
+  let linkAges = new Map();   // pairKey -> seconds that web has existed (pairKey = idLo*LINK_KEY + idHi)
+  let linkAgesNext = new Map(); // double-buffered with linkAges + swapped each frame → no per-frame Map alloc
   const WEB_GRACE = 0.32;     // s: a freshly-formed web can't kill until it settles
   let running = false, dead = false, paused = false;
   let elapsed = 0, lastT = 0, startT = 0;
@@ -571,15 +663,17 @@
   let themeColor = null;            // dominant spawn colour this wave/level (null = all)
   let bossWave = false;             // current wave/level features the boss
   let journeyIdx = 0, levelEndsAt = 0; // journey mode
+  let introUntil = 0;                  // journey: brief held intro so you can read the title before the swarm moves
+  let idleDisperse = 0;                // idle: until-time during which dense groups push apart (spread out, no wipe)
   let journeyTime = 0, journeyPts = 0; // journey: time + points banked from cleared levels (score persists across levels)
   let frozenAccum = 0, waveRampStart = 0; // seconds spent frozen (excluded from the speed ramp)
   let biomeFade = 1, prevBiome = null, biomeFadeRate = 1.6; // crossfade between biomes (0→1)
-  let pattern = null, prevPattern = null; // subtle background pattern, varies per biome
+  let pattern = null;                     // subtle background pattern — own clock, independent of biome
   let patternDir = 0;                     // random drift direction for the pattern (radians)
   let pendingPattern = null, pendingDir = 0; // next pattern, applied only when faded to ~invisible
   let patOffX = 0, patOffY = 0;           // continuously accumulated pattern offset (no teleport on dir change)
   let nextBiomeAt = 0;              // classic: time of the next slow biome shift
-  const PATTERN_KEYS = ["none", "grid", "dots", "rings", "diag", "weave", "cross", "wave", "hex"];
+  const PATTERN_KEYS = ["none", "grid", "dots", "rings", "diag", "weave", "cross", "wave", "hex", "tri", "diamond", "chevron", "scales"];
   let banner = null;                // {big, sub, until} transient on-canvas wave/level title
   let biome = null;                 // current biome (visual theme)
   const WAVE_LEN = 18;              // seconds per wave (survive to advance)
@@ -618,21 +712,29 @@
   // survive seconds, optional boss, a biome, and a line of plot shown before it.
   const JOURNEY = [
     { name: "Awakening",  color: "199,116,232", len: 35, boss: false, biome: "dusk",
-      plot: "You wake as a stray node in the Lattice — a living grid of data. The Chasers turn toward you. Run." },
+      plot: "You wake as a stray node in the Lattice — a living grid of data. A node's colour is its nature.",
+      enemy: "Purple nodes are Chasers — they turn and bolt straight at you." },
     { name: "The Timid",  color: "255,138,96",  len: 38, boss: false, biome: "toxic",
-      plot: "The Shy ones swarm and flinch — bold from afar, panicked up close. Use their fear." },
+      plot: "Deeper into the grid the air turns acrid. Something down here is afraid of you.",
+      enemy: "Orange nodes are Shy Ones — bold at range, they flinch and back off when you crowd them." },
     { name: "Drift",      color: "120,196,255", len: 40, boss: false, biome: "void",
-      plot: "Out in the open field the Scatterers roam, barely chasing. Calm — but the webs between them still bite." },
+      plot: "Past the dense core the Lattice thins to an open void where signals barely hold.",
+      enemy: "Blue nodes are Scatterers — they barely chase, but the webs strung between them still bite." },
     { name: "The Ambush", color: "255,106,213", len: 36, boss: false, biome: "rose",
-      plot: "Word spreads through the mesh. The Ambushers learn your habits, cutting ahead of every move you make." },
+      plot: "Word of you spreads through the mesh. Now the grid hunts back — and it has learned your habits.",
+      enemy: "Pink nodes are Ambushers — they cut ahead to where you're going, not where you are." },
     { name: "Static",     color: "34,211,238",  len: 38, boss: false, biome: "ice",
-      plot: "Deeper in, the signal frays. Erratics spiral around you, never quite where you expect." },
-    { name: "The Hive",   color: "255,248,120", len: 40, boss: false, biome: "ember",
-      plot: "The Hive packs tight and grows as one. Whole clusters drift together. Thread the gaps." },
+      plot: "The signal frays in the cold. Nothing moves in a straight line this deep.",
+      enemy: "Cyan nodes are Erratics — they spiral and jitter, never quite where you expect." },
+    { name: "Hivemind",   say: "Hive mind", color: "255,248,120", len: 40, boss: false, biome: "ember",
+      plot: "The grid runs hot near the swarm-nests, where many nodes think as one.",
+      enemy: "Yellow nodes are the Hive — they clump tight and grow as one drifting mass." },
     { name: "The Warden", color: "199,116,232", len: 42, boss: true, biome: "void",
-      plot: "A Warden node guards the gateway. It won't let you pass — catch it in a star-blast and break it open. The level ends only when it falls." },
+      plot: "A sealed gateway looms. Something vast stirs in the dark, and it knows you're here.",
+      enemy: "The Warden hunts with patterns you haven't seen — read its attack, then catch it in a star-blast." },
     { name: "Confluence", color: null, len: 45, boss: true, bossCount: 3, shooter: true, biome: "confluence",
-      plot: "Every colour converges on the core — three Wardens, one that fires on you. Blast them all to break through. No way out until they're gone." },
+      plot: "The core. Every colour of the Lattice converges here at once. This is where it ends.",
+      enemy: "The core's guardians come at you as one — every attack the Lattice has. Outlast the storm, blast them apart." },
   ];
 
   function rand(a, b) { return a + Math.random() * (b - a); }
@@ -759,6 +861,8 @@
     player.x = w / 2; player.y = h / 2; player.px = player.x; player.py = player.y;
     aimX = w / 2; aimY = h * 0.3;
     dead = false;
+    introUntil = 0; // only journey levels set a held intro (below); everything else starts live
+    idleDisperse = 0; // idle screensaver: dense-group spread-out timer
     // per-mode setup
     wave = 0; themeColor = null; bossWave = false; banner = null;
     biome = null; prevBiome = null; pattern = null; biomeFade = 1;
@@ -828,11 +932,12 @@
     let bkey = BIOME_KEYS[(Math.random() * BIOME_KEYS.length) | 0];
     if (bkey === lastBiome) bkey = BIOME_KEYS[(BIOME_KEYS.indexOf(bkey) + 1) % BIOME_KEYS.length];
     lastBiome = bkey;
-    prevBiome = biome; prevPattern = pattern;
+    prevBiome = biome;
     biome = BIOMES[bkey];
-    queuePattern(); // swap deferred until the pattern fades to ~invisible (no flick)
+    // pattern is NOT touched here — it lives on its own clock (see drawBiome), so biome and
+    // pattern change independently at different rates
     biomeFade = fade ? 0 : 1;
-    biomeFadeRate = slow ? 0.13 : 1.6; // classic: a long, gentle ~8s crossfade
+    biomeFadeRate = mode === "idle" ? 0.1 : slow ? 0.13 : 1.6; // idle: ~10s crossfade; classic ~8s; others snappy
     audio.setBiome(bkey);
   }
 
@@ -870,7 +975,13 @@
         if (waveType === "special") startSpecial(now);
       }
     }
+    audio.setTriumph(waveType === "special"); // power-cache wave → upbeat, quicker music
     banner = { big: "WAVE " + wave, sub, until: now + 2.4 };
+    // voiceover: announce the wave by number + flavour
+    say(bossWave ? "Wave " + wave + ". " + sub.replace(" · ", ", ")
+      : waveType === "special" ? "Wave " + wave + ". Power cache"
+      : themeColor ? "Wave " + wave + ". " + (PERSONA_NAME[themeColor] || "")
+      : "Wave " + wave);
   }
 
   // special wave: scatter gems and front-load the powerups (incl. the shooter)
@@ -889,17 +1000,23 @@
     bossWave = !!L.boss;
     biome = BIOMES[L.biome] || null;
     prevBiome = null; biomeFade = 0; biomeFadeRate = 1.6; // always fade the biome in
-    queuePattern();
+    // pattern runs on its own independent clock (see drawBiome) — not reset per level
     audio.setBiome(L.biome);
-    levelEndsAt = L.len;
-    banner = { big: L.name, sub: themeColor ? PERSONA_NAME[themeColor] : "All colours", until: 2.4 };
+    introUntil = 1.4;                 // hold the swarm briefly so the title/enemy text can be read
+    levelEndsAt = L.len + introUntil; // ...and don't charge the held time against the survival clock
+    // title fades out by `until`; the enemy line lingers to `subUntil`, then fades slowly
+    banner = { big: L.name.toUpperCase(), sub: L.enemy, from: 0, until: 2.8, subUntil: 5.2 };
+    say(L.say || L.name); // voiceover: announce the level name (L.say = TTS-only spelling, e.g. "Hive mind")
     if (L.boss) {
       bosses = []; enemyBullets = [];
       const n = L.bossCount || 1;
       // distinct colours per boss when the level has no single theme (Confluence)
       const pool = PALETTE.slice().sort(() => Math.random() - 0.5);
-      for (let i = 0; i < n; i++) spawnBoss(themeColor || pool[i % pool.length], L.shooter && i === 0);
-      nextStar = 2; // boss levels need blasts to win → first one comes quickly
+      // give each boss a bullet-hell archetype (charger/spiral/burst/weaver/splitter) for varied
+      // behaviour — hp stays 0 so a star-blast still pops them in one hit, as before
+      const kinds = ARENA_BOSSES.slice().sort(() => Math.random() - 0.5);
+      for (let i = 0; i < n; i++) spawnBoss(themeColor || pool[i % pool.length], false, kinds[i % kinds.length]);
+      nextStar = introUntil + 6; // delay the first star — let the fight open before you can blast (was ~immediate)
       while (hunters.length < (MOBILE ? 12 : 18)) spawnHunter();
     }
   }
@@ -913,7 +1030,22 @@
     if (journeyIdx >= JOURNEY.length) {
       winPanel.hidden = false; document.body.classList.remove("playing");
       audio.sfx("blast"); winCelebrate();
+      say("Freedom"); // journey-complete voiceover (matches the FREEDOM panel)
+      recordWin(); // log the full-run score + offer a leaderboard submit on the win screen
     } else showPlot();
+  }
+
+  // journey complete: log the whole-run score (banked time + points) and offer a submit
+  function recordWin() {
+    const totalTime = journeyTime, totalPts = journeyPts, score = totalTime + totalPts;
+    lastRun = { score, time: totalTime, points: totalPts };
+    const isBest = score > best;
+    if (isBest) { best = score; localStorage.setItem(bestKey(), best.toFixed(2)); bestEl.textContent = best.toFixed(1); }
+    winVerdictEl.textContent = "Run score " + score.toFixed(1) + " · " + totalTime.toFixed(1) + "s · ◆ " + totalPts + (isBest ? " · New best! 🏆" : " · Best " + best.toFixed(1));
+    winStatusEl.textContent = "";
+    winSubmitBtn.disabled = false;
+    winLbSubmitEl.hidden = false;
+    loadBoard(undefined, winView);
   }
 
   // journey: show the plot card for the upcoming level (Begin → start())
@@ -928,6 +1060,7 @@
 
   // a lethal touch — consumed by shield + i-frames; returns true if it kills
   function takeHit() {
+    if (mode === "idle") return false;              // idle/screensaver: nodes pass through, nothing kills
     if (elapsed < invulnUntil) return false;        // i-frames
     if (buffs.shield > elapsed) {                   // timed Shield buff — soaks every hit for its duration
       invulnUntil = elapsed + 0.5;
@@ -974,7 +1107,7 @@
   // collect a star → expanding shockwave that destroys nodes as it reaches them
   function starBlast() {
     // smaller reach on mobile so it doesn't engulf the whole (small) screen
-    const reach = (MOBILE ? 260 : 460) * dpr * arenaScale * (1 + Math.min(1, elapsed / 120)); // bigger blast later in the run
+    const reach = (MOBILE ? 260 : mode === "journey" || mode === "waves" ? 380 : 460) * dpr * arenaScale * (1 + Math.min(1, elapsed / 120)); // bigger blast later; journey + waves desktop dialled back
     shocks.push({ x: player.x, y: player.y, t: 0, max: reach, rainbow: true, kill: true, fat: true });
     audio.sfx("blast");
     star = null;
@@ -983,6 +1116,7 @@
   function start() {
     reset();
     audio.resume(); audio.startMusic(); audio.sfx("start"); // gesture → unlock audio
+    if (mode === "classic") say("Classic"); // waves/journey/arena announce their wave/level/mode in their own setup
     startPanel.hidden = true;
     overPanel.hidden = true;
     helpPanel.hidden = true;
@@ -990,6 +1124,7 @@
     winPanel.hidden = true;
     arenaStartPanel.hidden = true;
     document.body.classList.add("playing"); // hide cursor mid-run
+    document.body.classList.toggle("idle", mode === "idle"); // idle → hide HUD chrome
     playerAlpha = 0; // fade the player in
     running = true; paused = false; celebrating = false; document.body.classList.remove("paused"); setPauseBtn();
     startT = -1; // stamp on first frame (no Date.now needed)
@@ -1000,7 +1135,9 @@
     running = false;
     dead = true;
     audio.sfx("death");
-    if (mode === "arena") say(["Eliminated", "Game over", "Destroyed", "Signal lost", "System failure", "Connection terminated"][(Math.random() * 6) | 0]);
+    audio.setTriumph(false); // clear any power-cache uplift on death
+    say(mode === "journey" ? "Caught" // journey loss always matches the CAUGHT panel
+      : ["Eliminated", "Game over", "Destroyed", "Signal lost", "System failure", "Connection terminated"][(Math.random() * 6) | 0]); // end-of-game voiceover
     document.body.classList.remove("playing"); // restore cursor on menu
     // journey: carry cleared-level time + points so the score is a whole-run total, not per-level
     const totalTime = elapsed + (mode === "journey" ? journeyTime : 0);
@@ -1043,7 +1180,8 @@
     const dt = Math.min(0.05, (now - lastT) / 1000); // clamp big tab-switch gaps
     lastT = now;
     elapsed = (now - startT) / 1000;
-    if (elapsed < frozenUntil) frozenAccum += dt; // don't let frozen time fuel the speed ramp
+    const intro = elapsed < introUntil; // journey: brief held intro (swarm frozen, no spawns) so the title reads
+    if (elapsed < frozenUntil || intro) frozenAccum += dt; // don't let frozen/intro time fuel the speed ramp
     if (biomeFade < 1) biomeFade = Math.min(1, biomeFade + dt * biomeFadeRate); // biome crossfade
     // classic counts up (survival); waves/journey count DOWN to the wave/level end;
     // journey boss levels show bosses-remaining instead (they end on defeat, not time)
@@ -1068,6 +1206,14 @@
       player.y = clamp01(player.y + player.vy * dt, h);
     }
 
+    // idle: no cursor — the player drifts on its own gentle Lissajous wander
+    if (mode === "idle") {
+      // time-warp the wander clock so the player's speed surges and eases a lot — it
+      // near-drifts at times, then darts across (phase velocity ranges ~0.04×–1.96×)
+      const tt = elapsed + 8 * Math.sin(elapsed * 0.12);
+      player.x = w * (0.5 + 0.34 * Math.sin(tt * 0.17) + 0.08 * Math.sin(tt * 0.55));
+      player.y = h * (0.5 + 0.32 * Math.cos(tt * 0.14) + 0.07 * Math.cos(tt * 0.47));
+    }
     // player velocity from this frame's pointer movement (for ambush/predict)
     player.vx = (player.x - player.px) / (dt || 0.016);
     player.vy = (player.y - player.py) / (dt || 0.016);
@@ -1083,7 +1229,7 @@
       const L = JOURNEY[journeyIdx];
       if (L.boss) { if (bosses.length === 0) { levelComplete(); return; } }
       else if (elapsed >= levelEndsAt) { levelComplete(); return; }
-    } else if ((mode === "classic" || mode === "arena") && elapsed >= nextBiomeAt) { pickBiome(true, true); scheduleBiomeShift(); }
+    } else if ((mode === "classic" || mode === "arena" || mode === "idle") && elapsed >= nextBiomeAt) { pickBiome(true, true); scheduleBiomeShift(); }
 
     // difficulty ramps with time: more hunters fast, slightly slower speed.
     // rampTime excludes time spent frozen, so a late freeze doesn't make the game
@@ -1107,6 +1253,11 @@
       const wdiff = (1 + (weaponLvl - 1) * 0.05) * (1 + surge * 0.2); // weapon level + surge → tougher swarm
       maxSpeed = (62 + st * 1.1) * dpr * sp * arenaScale * wdiff; // a bit slower than before
       accel = (150 + st * 2.6) * dpr * sp * arenaScale * wdiff;
+    } else if (mode === "idle") {
+      // idle/screensaver: slow drift whose speed cycles up + down over a long ~2-min wave
+      const sw = 0.5 + 0.5 * Math.sin(elapsed * 0.055);
+      maxSpeed = (20 + 30 * sw) * dpr * arenaScale; // ~20 → 50
+      accel = (50 + 60 * sw) * dpr * arenaScale;
     } else {
       // Classic/Journey: ramp with active time; journey escalates a touch per level
       // (mobile journey nudged ~10% harder).
@@ -1117,13 +1268,16 @@
     // The Hive (yellow, slow clusterers) packs more nodes — bigger cap + faster build
     const hive = themeColor === "255,248,120";
     const wmob = mode === "waves" && MOBILE; // waves felt too easy on phones → bigger swarm + faster build
-    const cap = Math.round((wmob ? 60 : MOBILE ? 32 : mode === "arena" ? 270 : 130) * arenaScale * (hive ? 1.45 : 1)), rate = (wmob ? 0.95 : MOBILE ? 0.6 : 1.15) * (hive ? 1.5 : 1);
+    const sparse = mode === "journey" && (journeyIdx === 1 || journeyIdx === 2); // "The Timid"/"Drift" — shy + scattering nodes barely chase → felt too empty; pack more in
+    const hiveLvl = mode === "journey" && journeyIdx === 5; // "Hivemind" — extra-dense yellow swarm on top of the Hive boost
+    const cap = Math.round((wmob ? 60 : mode === "idle" ? (MOBILE ? 70 : 160) : MOBILE ? 32 : mode === "arena" ? 270 : 130) * arenaScale * (hive ? 1.45 : 1) * (sparse ? 1.5 : 1) * (hiveLvl ? 1.5 : 1)), rate = (wmob ? 0.95 : mode === "idle" ? (MOBILE ? 0.9 : 1.4) : MOBILE ? 0.6 : 1.15) * (hive ? 1.5 : 1) * (sparse ? 1.6 : 1) * (hiveLvl ? 1.5 : 1);
     // Journey resets elapsed each level, so it would re-ramp from sparse every time.
     // Start fuller, ramp faster, and escalate the floor with the level number.
-    const jBase = mode === "journey" ? 4 + journeyIdx : mode === "waves" ? 6 : mode === "arena" ? 26 + (weaponLvl - 1) * 4 : 0;
+    const jBase = mode === "journey" ? 4 + journeyIdx : mode === "waves" ? 6 : mode === "arena" ? 26 + (weaponLvl - 1) * 4 : mode === "idle" ? 14 : 0;
     const jRate = mode === "journey" ? 1.25 : mode === "waves" ? 1.25 : mode === "arena" ? 2.1 : 1;
     let targetCount = Math.min(cap, 6 + jBase + Math.floor(rt * rate * jRate));
-    if (bossWave) targetCount = Math.min(targetCount, MOBILE ? 14 : 22); // thin the swarm so the boss is the threat
+    if (bossWave) targetCount = mode === "journey" ? (MOBILE ? 18 : 28) // journey boss: steady swarm that keeps refilling (don't stall after the initial fill)
+      : Math.min(targetCount, MOBILE ? 14 : 22); // waves boss: thin the swarm so the boss is the threat
     else if (waveType === "special") targetCount = Math.min(targetCount, MOBILE ? 18 : 30); // calmer reward wave
     // arena adaptive heat: if you keep the screen near-empty (melting everything), surge
     // hard — way more, tougher, faster nodes — until you're actually pressured again.
@@ -1138,18 +1292,20 @@
     // blast (or boss pop) thins the swarm for a while instead of backfilling
     // instantly next frame. The natural ramp is slower than this, so it's only
     // throttled right after a big kill.
-    if (hunters.length < targetCount && elapsed >= nextSpawn) {
+    if (hunters.length < targetCount && elapsed >= nextSpawn && !intro) {
       spawnHunter();
       // journey fills faster, waves a bit slower (killed enemies don't snap back);
       // the Hive refills quickest of all
       let gap = mode === "journey" ? 0.42 : mode === "waves" ? 0.9 : mode === "arena" ? 0.2 / (1 + surge * 1.5) : SPAWN_GAP;
       if (hive) gap *= 0.5;
+      if (sparse) gap *= 0.55; // Timid/Drift fill faster too
+      if (mode === "waves" && hunters.length < targetCount * 0.4) gap *= 0.3; // wave screen emptied (e.g. after a blast) → repopulate fast instead of trickling back
       nextSpawn = elapsed + gap;
     }
 
     // spawn a rainbow star now and then; collect it by touching it
     // (arena has its own weapon/buff pickups instead of these touch powerups)
-    if (mode !== "arena" && !star && elapsed >= nextStar) {
+    if (mode !== "arena" && mode !== "idle" && !star && elapsed >= nextStar) {
       star = { x: rand(w * 0.14, w * 0.86), y: rand(h * 0.16, h * 0.84), t: 0 };
     }
     if (star) {
@@ -1163,7 +1319,7 @@
     }
 
     // freeze powerup — collect to freeze every hunter for a few seconds
-    if (mode !== "arena" && !ice && elapsed >= nextIce) {
+    if (mode !== "arena" && mode !== "idle" && !ice && elapsed >= nextIce) {
       ice = { x: rand(w * 0.14, w * 0.86), y: rand(h * 0.16, h * 0.84), t: 0 };
     }
     if (ice) {
@@ -1179,7 +1335,7 @@
     }
 
     // collectable point gems — keep a few on screen, grab for points
-    if (elapsed >= nextGem && gems.length < 5) {
+    if (mode !== "idle" && elapsed >= nextGem && gems.length < 5) {
       gems.push({ x: rand(w * 0.08, w * 0.92), y: rand(h * 0.1, h * 0.9), t: 0 });
       nextGem = elapsed + 1.5 + Math.random() * 2;
     }
@@ -1200,7 +1356,7 @@
     if (elapsed > comboUntil) mult = 1; // combo lapsed
 
     // shield powerup — absorbs one hit; while held the music brightens
-    if (mode !== "arena" && !shield && !shieldActive && elapsed >= nextShield) {
+    if (mode !== "arena" && mode !== "idle" && !shield && !shieldActive && elapsed >= nextShield) {
       shield = { x: rand(w * 0.14, w * 0.86), y: rand(h * 0.16, h * 0.84), t: 0 };
     }
     if (shield) {
@@ -1213,7 +1369,7 @@
     }
 
     // shooter powerup — collect to auto-fire darts along your travel for a few seconds
-    if (mode !== "arena" && !shooter && elapsed >= shootUntil && elapsed >= nextShooter) {
+    if (mode !== "arena" && mode !== "idle" && !shooter && elapsed >= shootUntil && elapsed >= nextShooter) {
       shooter = { x: rand(w * 0.14, w * 0.86), y: rand(h * 0.16, h * 0.84), t: 0 };
     }
     if (shooter) {
@@ -1338,7 +1494,7 @@
       }
     }
 
-    const frozen = elapsed < frozenUntil;
+    const frozen = elapsed < frozenUntil || intro;
 
     ctx.clearRect(0, 0, w, h);
 
@@ -1353,9 +1509,9 @@
       hn.age += dt;
 
       // only LONE nodes age out and fly off; clumped nodes stay (clumps persist)
-      if (!hn.escaping && hn.age > hn.life && (hn.nb || 0) < 2) {
+      if (!hn.escaping && hn.age > hn.life * (mode === "idle" ? 3 : 1) && (hn.nb || 0) < 2) {
         hn.escaping = true;
-        const kick = (440 + Math.random() * 200) * dpr;
+        const kick = (mode === "idle" ? 120 + Math.random() * 80 : 440 + Math.random() * 200) * dpr; // idle: gentle drift-off; others unchanged
         hn.vx = (-pdx / pd) * kick; hn.vy = (-pdy / pd) * kick;
       }
 
@@ -1363,7 +1519,16 @@
         const p = hn.p;
         // each personality aims at a different target point
         let tx = player.x, ty = player.y;
-        if (p.kind === "ambush") {            // Pinky: lead further ahead of the player
+        if (mode === "idle") {
+          // idle: the whole swarm cycles through collective moods (~22s each) for evolving
+          // interest — gather, orbit the drifting player, roam, then chase. Low accel makes
+          // each shift a gentle drift, not a snap.
+          const mood = Math.floor(elapsed / 22) % 4;
+          if (mood === 0) { tx = w * (0.5 + 0.3 * Math.sin(elapsed * 0.06)); ty = h * (0.5 + 0.28 * Math.cos(elapsed * 0.05)); } // gather to a wandering point
+          else if (mood === 1) { const a = hn.age * 1.3 + hn.seed; tx = player.x + Math.cos(a) * 180 * dpr; ty = player.y + Math.sin(a) * 180 * dpr; } // orbit
+          else if (mood === 2) { const a = elapsed * 0.18 + hn.seed; tx = w * 0.5 + Math.cos(a) * w * 0.46; ty = h * 0.5 + Math.sin(a * 1.3) * h * 0.46; } // roam
+          // mood 3 → chase the drifting player (tx,ty already set)
+        } else if (p.kind === "ambush") {     // Pinky: lead further ahead of the player
           tx = player.x + player.vx * 1.3; ty = player.y + player.vy * 1.3;
         } else if (p.kind === "erratic") {    // Inky: wide, fast wobble orbit
           const a = hn.age * 3.2 + hn.seed;
@@ -1373,7 +1538,7 @@
           tx = w * 0.5 + Math.cos(a) * w * 0.46; ty = h * 0.5 + Math.sin(a * 1.3) * h * 0.46;
         }
         let tdx = tx - hn.x, tdy = ty - hn.y;
-        if (p.kind === "shy" && pd < 260 * dpr) { tdx = -pdx; tdy = -pdy; } // Clyde bolts when close
+        if (p.kind === "shy" && pd < 260 * dpr && mode !== "idle") { tdx = -pdx; tdy = -pdy; } // Clyde bolts when close
         const td = Math.hypot(tdx, tdy) || 1;
         hn.vx += (tdx / td) * accel * p.acc * dt;
         hn.vy += (tdy / td) * accel * p.acc * dt;
@@ -1513,11 +1678,17 @@
     // hunter-hunter forces (skipped while frozen) + lethal web check, one pass
     if (physics(dt, frozen) && takeHit()) { drawScene(); gameOver(); return; } // caught by a link
 
+    // idle: when the web gets too DENSE (lots of links per node), gently spread the swarm
+    // apart for a few seconds (no screen-wipe) — tight groups loosen, then drift back together
+    if (mode === "idle" && hunters.length > 40 && links.length > hunters.length * 1.4 && elapsed >= idleDisperse) {
+      idleDisperse = elapsed + 5;
+    }
+
     // legacy shooter weapon (classic/waves/journey) — fire darts along travel, ±2°
     if (mode !== "arena" && elapsed < shootUntil && elapsed >= nextBullet) {
       const bspd = 820 * dpr * arenaScale;
       const ang = Math.atan2(heading.y, heading.x) + (Math.random() * 2 - 1) * (2 * Math.PI / 180);
-      bullets.push({ x: player.x, y: player.y, vx: Math.cos(ang) * bspd, vy: Math.sin(ang) * bspd, life: 1.1, pierce: 0, dmg: 1 });
+      bullets.push({ x: player.x, y: player.y, vx: Math.cos(ang) * bspd, vy: Math.sin(ang) * bspd, life: 1.1, pierce: 0, dmg: 1, kind: "pill" });
       nextBullet = elapsed + BULLET_GAP;
       audio.sfx("pop");
     }
@@ -1672,13 +1843,16 @@
   // uniform spatial grid: bucket hunters into cells sized to the max interaction
   // radius, then visit only the 9-cell neighbourhood per node → near-O(n) instead of
   // O(n²). Each unordered pair is handed to fn exactly once (j > i).
-  let gridCells = [], gridCx = [], gridCy = [];
+  let gridCells = [], gridCx = [], gridCy = [], gridUsed = []; // buckets are pooled + reused across frames (no per-frame alloc)
   function forEachPair(fn) {
     const n = hunters.length;
     if (n < 2) return;
-    const cell = Math.max(74 * dpr * GROUP_SCALE, JOLT_R * dpr, COH_R * dpr, GROUP_R * dpr * GROUP_SCALE, Math.sqrt(linkD2)) + 1;
+    const cell = Math.max(74 * dpr * GROUP_SCALE, JOLT_R * dpr, COH_R * dpr, GROUP_R * dpr * GROUP_SCALE, Math.sqrt(scatLinkD2)) + 1;
     const cols = Math.max(1, Math.ceil(w / cell)), rows = Math.max(1, Math.ceil(h / cell));
-    const grid = gridCells; grid.length = cols * rows; grid.fill(null);
+    const grid = gridCells;
+    // empty only the buckets we filled last frame (cheaper than fill(null) + reallocating arrays)
+    for (let u = 0; u < gridUsed.length; u++) { const b = grid[gridUsed[u]]; if (b) b.length = 0; }
+    gridUsed.length = 0;
     gridCx.length = n; gridCy.length = n;
     for (let i = 0; i < n; i++) {
       const hx = hunters[i].x, hy = hunters[i].y;
@@ -1686,7 +1860,10 @@
       const ri = hy < 0 ? 0 : hy >= h ? rows - 1 : (hy / cell) | 0;
       gridCx[i] = ci; gridCy[i] = ri;
       const idx = ri * cols + ci;
-      (grid[idx] || (grid[idx] = [])).push(i);
+      let bucket = grid[idx];
+      if (!bucket) bucket = grid[idx] = [];
+      if (bucket.length === 0) gridUsed.push(idx); // first node into this bucket this frame
+      bucket.push(i);
     }
     for (let i = 0; i < n; i++) {
       const ci = gridCx[i], ri = gridCy[i], a = hunters[i];
@@ -1694,7 +1871,7 @@
         const ny = ri + oy; if (ny < 0 || ny >= rows) continue;
         for (let ox = -1; ox <= 1; ox++) {
           const nx = ci + ox; if (nx < 0 || nx >= cols) continue;
-          const arr = grid[ny * cols + nx]; if (!arr) continue;
+          const arr = grid[ny * cols + nx]; if (!arr || arr.length === 0) continue;
           for (let k = 0; k < arr.length; k++) {
             const j = arr[k]; if (j <= i) continue;
             const b = hunters[j];
@@ -1705,6 +1882,9 @@
       }
     }
   }
+  // reused physics scratch (cleared each frame) — avoids 4 array allocations per physics pass
+  const LINK_KEY = 4194304; // 2^22; hunter ids stay well under this within a session → collision-free pair keys
+  let pCnt = [], pSx = [], pSy = [], pScnt = [];
 
   // hunter-hunter forces + lethal-web detection, one neighbourhood pass via the grid:
   //  - soft repulsion within SEP so they spread into a cloud, not a clump
@@ -1715,20 +1895,21 @@
     // track how long each web has existed → a freshly-formed web can't kill
     // until WEB_GRACE has passed (gives the player a beat to read the threat).
     const prevAges = linkAges;
-    const nextAges = new Map();
+    const nextAges = linkAgesNext; nextAges.clear(); // reuse two maps + swap → no per-frame Map allocation
     // frozen: hunters don't move, only their webs can still catch you
     if (frozen) {
       let kill = false;
       forEachPair((i, j, a, b, dx, dy, d2) => {
-        if (d2 < linkD2) {
-          const key = a.id < b.id ? a.id + "|" + b.id : b.id + "|" + a.id;
+        const ld2 = a.color === SCATTER && b.color === SCATTER ? scatLinkD2 : linkD2;
+        if (d2 < ld2) {
+          const key = a.id < b.id ? a.id * LINK_KEY + b.id : b.id * LINK_KEY + a.id;
           const lifeT = (prevAges.get(key) || 0) + dt;
           nextAges.set(key, lifeT);
-          links.push({ a, b, al: 1 - d2 / linkD2, same: a.color === b.color });
+          links.push({ a, b, al: 1 - d2 / ld2, same: a.color === b.color });
           if (!kill && lifeT >= WEB_GRACE && segHitsPlayer(a.x, a.y, b.x, b.y)) kill = true;
         }
       });
-      linkAges = nextAges;
+      linkAges = nextAges; linkAgesNext = prevAges;
       return kill;
     }
     const SEP = 74 * dpr * GROUP_SCALE, SEP2 = SEP * SEP; // tighter packing on mobile
@@ -1738,21 +1919,24 @@
     // clumps pack tighter the longer you survive: same-colour cohesion strengthens
     // and internal repulsion eases, while inter-colour repulsion scales up in step
     // so the tighter balls still stay segregated into separate groups.
-    const tight = 1 + Math.min(1.3, elapsed / 45);
+    const idleMode = mode === "idle"; // idle: looser clumps + colours allowed to mingle
+    const tight = idleMode ? 1 : 1 + Math.min(1.3, elapsed / 45);
     const n = hunters.length;
-    const cnt = new Array(n).fill(0), sx = new Array(n).fill(0), sy = new Array(n).fill(0);
-    const scnt = new Array(n).fill(0); // same-colour clump-mates
+    const cnt = pCnt, sx = pSx, sy = pSy, scnt = pScnt; // reused scratch (cleared below)
+    cnt.length = sx.length = sy.length = scnt.length = n;
+    for (let i = 0; i < n; i++) { cnt[i] = 0; sx[i] = 0; sy[i] = 0; scnt[i] = 0; }
     let linkKill = false;
     forEachPair((i, j, a, b, dx, dy, d2) => {
         if (d2 <= 0.01) return;
         if (d2 < JR2) { cnt[i]++; cnt[j]++; sx[i] += b.x; sy[i] += b.y; sx[j] += a.x; sy[j] += a.y; }
         const same = a.color === b.color;
+        const szf = idleMode ? (a.r + b.r) / (7 * dpr) : 1; // idle only: scale push-apart/repel with node size
         if (same && d2 < GR2) { scnt[i]++; scnt[j]++; }
         if (d2 < SEP2) {
           const d = Math.sqrt(d2), ux = dx / d, uy = dy / d;
           // same colour barely repels (lets them pack tight, even tighter over time);
           // different colours shove hard — and harder over time — to stay segregated
-          const f = (1 - d / SEP) * (same ? 68 / tight : 1700 * tight) * dpr * dt;
+          const f = (1 - d / SEP) * (same ? 68 / tight : (idleMode ? 200 : 1700 * tight)) * dpr * dt * szf; // idle: soft cross-colour push → colours mingle (no segregated grid); push scales with size
           a.vx -= ux * f; a.vy -= uy * f;
           b.vx += ux * f; b.vy += uy * f;
           const min = a.r + b.r;
@@ -1766,21 +1950,26 @@
           // nodes are free to chase the cursor). Crowded clump → members repel → split.
           const d = Math.sqrt(d2), ux = dx / d, uy = dy / d;
           const crowded = (a.snb || 0) >= (a.p.split || SPLIT_SIZE) || (b.snb || 0) >= (b.p.split || SPLIT_SIZE);
-          const cf = a.p.coh * (crowded ? -220 : 560 * tight) * dpr * dt; // gather harder over time
+          // idle: cohesion slowly oscillates between gathering (+) and dispersing (−) so the
+          // field breathes; while a "too dense" disperse window is active it pushes apart hard
+          // so tight groups visibly spread out (then drift back together)
+          const idleCoh = elapsed < idleDisperse ? -300 : 220 * Math.sin(elapsed * 0.052);
+          const cf = a.p.coh * (idleMode ? idleCoh : (crowded ? -220 : 560 * tight)) * dpr * dt;
           a.vx += ux * cf; a.vy += uy * cf;
           b.vx -= ux * cf; b.vy -= uy * cf;
         } else if (d2 < CR2) {
           // differing colours shove apart at range → clumps segregate hard (harder over time)
           const d = Math.sqrt(d2), ux = dx / d, uy = dy / d;
-          const rf = (1 - d / CR) * 400 * tight * dpr * dt;
+          const rf = (1 - d / CR) * (idleMode ? 0 : 400 * tight) * dpr * dt * szf; // idle: no cross-colour segregation → multicolour clumps; repel scales with size
           a.vx -= ux * rf; a.vy -= uy * rf;
           b.vx += ux * rf; b.vy += uy * rf;
         }
-        if (d2 < linkD2) {
-          const key = a.id < b.id ? a.id + "|" + b.id : b.id + "|" + a.id;
+        const ld2 = same && a.color === SCATTER ? scatLinkD2 : linkD2; // scatterers web up at longer range
+        if (d2 < ld2) {
+          const key = a.id < b.id ? a.id * LINK_KEY + b.id : b.id * LINK_KEY + a.id;
           const lifeT = (prevAges.get(key) || 0) + dt;
           nextAges.set(key, lifeT);
-          links.push({ a, b, al: 1 - d2 / linkD2, same });
+          links.push({ a, b, al: 1 - d2 / ld2, same });
           if (!linkKill && lifeT >= WEB_GRACE && segHitsPlayer(a.x, a.y, b.x, b.y)) linkKill = true;
         }
     });
@@ -1800,7 +1989,7 @@
         if (Math.random() < 0.16) { shocks.push({ x: cx, y: cy, t: 0, max: 120 * dpr }); audio.sfx("pop"); }
       }
     }
-    linkAges = nextAges;
+    linkAges = nextAges; linkAgesNext = prevAges;
     return linkKill;
   }
 
@@ -2214,11 +2403,15 @@
     ctx.strokeStyle = `rgba(255,255,255,${a})`;
     ctx.fillStyle = `rgba(255,255,255,${a})`;
     ctx.lineWidth = 1 * dpr;
-    const step = 64 * dpr;
-    // offsets accumulate continuously (advanced in drawBiome); changing direction only
-    // changes future velocity, so the pattern never teleports on a biome shift
+    const zoom = mode === "idle" ? 1 + 0.18 * Math.sin(bgT * 0.05) : 1; // idle: patterns slowly zoom in + out (~2-min cycle)
+    const step = 64 * dpr * zoom;
+    // patOffX/Y accumulate in CSS px (dpr-independent); we scale by dpr only here, at draw.
+    // So the visible phase is dpr*(patOff mod 64) — unchanged by a window resize (same dpr,
+    // same phase) AND by a zoom (dpr cancels). The pattern never rephases/jumps on resize.
+    // Direction changes only affect future velocity, so a biome swap never teleports it.
     const wrap = (v, m) => ((v % m) + m) % m;
-    const ox = wrap(patOffX, step), oy = wrap(patOffY, step);
+    const dx = patOffX * dpr, dy = patOffY * dpr;
+    const ox = wrap(dx, step), oy = wrap(dy, step);
     if (type === "grid") {
       ctx.beginPath();
       for (let x = ox - step; x < w; x += step) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
@@ -2233,15 +2426,16 @@
       const max = Math.hypot(w, h); // centre wanders continuously so the expansion reset never reads as a snap
       const cx = w / 2 + Math.sin(patOffX * 0.004) * w * 0.14, cy = h / 2 + Math.cos(patOffY * 0.004) * h * 0.14;
       ctx.beginPath();
-      for (let rad = (bgT * 6) % (step * 1.6) + 8; rad < max + step; rad += step * 1.6) { ctx.moveTo(cx + rad, cy); ctx.arc(cx, cy, rad, 0, 6.283185); }
+      // expansion + spacing both in device px (×dpr) → phase is dpr-stable, no jump on zoom
+      for (let rad = (bgT * 6 * dpr) % (step * 1.6) + 8 * dpr; rad < max + step; rad += step * 1.6) { ctx.moveTo(cx + rad, cy); ctx.arc(cx, cy, rad, 0, 6.283185); }
       ctx.stroke();
     } else if (type === "diag") {
-      const gap = step * 1.4, od = wrap(patOffX + patOffY, gap);
+      const gap = step * 1.4, od = wrap(dx + dy, gap);
       ctx.beginPath();
       for (let x = -h + od - gap; x < w; x += gap) { ctx.moveTo(x, 0); ctx.lineTo(x + h, h); }
       ctx.stroke();
     } else if (type === "weave") { // cross-hatch (both diagonals)
-      const gap = step * 1.4, od = wrap(patOffX + patOffY, gap);
+      const gap = step * 1.4, od = wrap(dx + dy, gap);
       ctx.beginPath();
       for (let x = -h + od - gap; x < w; x += gap) { ctx.moveTo(x, 0); ctx.lineTo(x + h, h); ctx.moveTo(x + h, 0); ctx.lineTo(x, h); }
       ctx.stroke();
@@ -2266,30 +2460,71 @@
         for (let x = xo; x < w + step; x += step) { ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283185); ctx.fill(); }
         row++;
       }
+    } else if (type === "diamond") { // small filled diamonds on a grid — one fill for the whole field
+      const s = 3.4 * dpr;
+      ctx.beginPath();
+      for (let x = ox - step; x < w + step; x += step) for (let y = oy - step; y < h + step; y += step) {
+        ctx.moveTo(x, y - s); ctx.lineTo(x + s, y); ctx.lineTo(x, y + s); ctx.lineTo(x - s, y); ctx.closePath();
+      }
+      ctx.fill();
+    } else if (type === "tri") { // outlined triangle lattice — one stroked path
+      ctx.beginPath();
+      for (let y = oy - step; y < h + step; y += step) for (let x = ox - step; x < w + step; x += step) {
+        ctx.moveTo(x, y + step * 0.42); ctx.lineTo(x + step * 0.5, y - step * 0.42); ctx.lineTo(x + step, y + step * 0.42);
+      }
+      ctx.stroke();
+    } else if (type === "chevron") { // rows of soft zigzags drifting with the biome
+      ctx.beginPath();
+      for (let y = oy - step; y < h + step; y += step) for (let x = ox - step; x < w + step; x += step) {
+        ctx.moveTo(x, y); ctx.lineTo(x + step * 0.5, y - step * 0.4); ctx.lineTo(x + step, y);
+      }
+      ctx.stroke();
+    } else if (type === "scales") { // overlapping fish-scale arcs, staggered rows
+      let row = 0;
+      ctx.beginPath();
+      for (let y = oy - step; y < h + step; y += step * 0.6) {
+        const xo = (row % 2) * step / 2 + ox - step;
+        for (let x = xo; x < w + step; x += step) { ctx.moveTo(x + step * 0.5, y); ctx.arc(x, y, step * 0.5, 0, Math.PI); }
+        row++;
+      }
+      ctx.stroke();
     }
     ctx.restore();
   }
   // pick the next pattern + drift direction; applied only once faded out (see drawBiome)
   function queuePattern() {
-    const np = PATTERN_KEYS[(Math.random() * PATTERN_KEYS.length) | 0], nd = Math.random() * 6.283185;
+    const np = PATTERN_KEYS[(Math.random() * PATTERN_KEYS.length) | 0], nd = Math.random() * 6.283185; // "none" allowed → occasional clean breather
     if (pattern === null) { pattern = np; patternDir = nd; } else { pendingPattern = np; pendingDir = nd; }
   }
-  let bgT = 0;
+  let bgT = 0, nextPatternAt = 0, patFade = 1;
   function drawBiome() {
     bgT += 0.016; // own clock so the wash animates even on menus
     patOffX += Math.cos(patternDir) * 0.4; patOffY += Math.sin(patternDir) * 0.4; // gentle, slow pattern drift
+    // pattern on its OWN quick clock (~10–16s), fully independent of biome shifts. A short
+    // dedicated fade-out/in hides each swap — NOT the slow breath, which used to bottleneck
+    // changes to once a minute. Games are short, so the pattern cycles briskly.
+    if (pendingPattern === null && bgT >= nextPatternAt) { queuePattern(); nextPatternAt = bgT + 10 + Math.random() * 6; }
+    if (pendingPattern !== null) { patFade -= 0.045; if (patFade <= 0) { patFade = 0; pattern = pendingPattern; patternDir = pendingDir; pendingPattern = null; } }
+    else if (patFade < 1) patFade = Math.min(1, patFade + 0.03);
     if (biomeFade < 1 && prevBiome) paintBiome(prevBiome, 1 - biomeFade);
     const f = biomeFade < 1 ? biomeFade : 1;
     paintBiome(biome, f);
-    // slow, deep breath — fades fully out for a spell, then back
-    const pb = Math.max(0, 0.25 + 0.95 * Math.sin(bgT * 0.11));
-    // only switch the pattern while it's invisible → the change is never seen
-    if (pendingPattern !== null && f * pb < 0.04) { pattern = pendingPattern; patternDir = pendingDir; pendingPattern = null; }
-    paintPattern(pattern, f * pb);
+    const pb = 0.55 + 0.45 * Math.sin(bgT * 0.11); // gentle breathing (never fully gone), independent of swaps
+    paintPattern(pattern, patFade * pb);
   }
 
   // transient wave/level title + small persistent progress label (non-classic modes)
   function drawHud() {
+    if (mode === "idle") { // screensaver: just a faint exit hint, no score chrome
+      if (!running) return;
+      ctx.save();
+      ctx.textAlign = "center";
+      ctx.font = `600 ${12 * uiScale}px "General Sans", system-ui, sans-serif`;
+      ctx.fillStyle = `rgba(255,255,255,${0.12 + 0.06 * Math.sin(bgT * 0.6)})`; // gentle pulse
+      ctx.fillText(MOBILE ? "tap for menu" : "click for menu", w / 2, h - 26 * dpr);
+      ctx.restore();
+      return;
+    }
     if (mode === "classic" || !running) return;
     ctx.save();
     ctx.textAlign = "center";
@@ -2387,23 +2622,41 @@
       // it up top below the HUD — bottom gets too busy next to the pause button + thumb.
       ctx.fillText(label.toUpperCase(), w / 2, MOBILE ? 58 * dpr : h - 92 * dpr);
     }
-    if (banner && elapsed < banner.until) {
-      const k = Math.min(1, (banner.until - elapsed) / 0.5, (elapsed - (banner.until - 2.4)) / 0.4 + 0.0001);
-      const a = Math.max(0, Math.min(1, k));
-      ctx.font = `700 ${44 * uiScale}px "Clash Display", system-ui, sans-serif`;
-      if (mode === "arena") { // rainbow sweep for the BULLET HELL title
-        const tw = ctx.measureText(banner.big).width;
-        const g = ctx.createLinearGradient(w / 2 - tw / 2, 0, w / 2 + tw / 2, 0);
-        for (let s = 0; s <= 6; s++) g.addColorStop(s / 6, `hsla(${(s * 60 + elapsed * 120) % 360},100%,65%,${a})`);
-        ctx.fillStyle = g;
-        ctx.shadowColor = `hsla(${(elapsed * 120) % 360},100%,60%,${a * 0.7})`; ctx.shadowBlur = 22 * dpr;
-      } else ctx.fillStyle = `rgba(255,255,255,${a})`;
-      ctx.fillText(banner.big, w / 2, h * 0.42);
-      ctx.shadowBlur = 0;
-      if (banner.sub) {
+    // banner: title fades in then out by `until`; the sub line can outlast it (subUntil)
+    // and fade slowly, so the enemy briefing lingers after the title is gone.
+    const bSubEnd = banner ? (banner.subUntil || banner.until) : 0;
+    if (banner && elapsed < bSubEnd) {
+      const from = banner.from != null ? banner.from : banner.until - 2.4;
+      const fadeIn = Math.max(0, Math.min(1, (elapsed - from) / 0.4));
+      const titleA = Math.max(0, Math.min(fadeIn, (banner.until - elapsed) / 0.5));
+      const subFade = banner.subUntil ? 1.6 : 0.5; // a lingering sub fades out slowly
+      const subA = Math.max(0, Math.min(fadeIn, (bSubEnd - elapsed) / subFade));
+      if (titleA > 0.001) {
+        ctx.font = `700 ${44 * uiScale}px "Clash Display", system-ui, sans-serif`;
+        if (mode === "arena") { // rainbow sweep for the BULLET HELL title
+          const tw = ctx.measureText(banner.big).width;
+          const g = ctx.createLinearGradient(w / 2 - tw / 2, 0, w / 2 + tw / 2, 0);
+          for (let s = 0; s <= 6; s++) g.addColorStop(s / 6, `hsla(${(s * 60 + elapsed * 120) % 360},100%,65%,${titleA})`);
+          ctx.fillStyle = g;
+          ctx.shadowColor = `hsla(${(elapsed * 120) % 360},100%,60%,${titleA * 0.7})`; ctx.shadowBlur = 22 * dpr;
+        } else ctx.fillStyle = `rgba(255,255,255,${titleA})`;
+        ctx.fillText(banner.big, w / 2, h * 0.42);
+        ctx.shadowBlur = 0;
+      }
+      if (banner.sub && subA > 0.001) {
         ctx.font = `600 ${18 * uiScale}px "General Sans", system-ui, sans-serif`;
-        ctx.fillStyle = `rgba(200,220,255,${a * 0.85})`;
-        ctx.fillText(banner.sub, w / 2, h * 0.42 + 34 * uiScale);
+        ctx.fillStyle = `rgba(200,220,255,${subA * 0.85})`;
+        // word-wrap the sub so a full enemy line fits on screen (short subs stay one line)
+        const maxW = Math.min(w * 0.82, 640 * uiScale), words = banner.sub.split(" ");
+        let line = "", lines = [];
+        for (const word of words) {
+          const test = line ? line + " " + word : word;
+          if (line && ctx.measureText(test).width > maxW) { lines.push(line); line = word; }
+          else line = test;
+        }
+        if (line) lines.push(line);
+        const lh = 24 * uiScale;
+        for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], w / 2, h * 0.42 + 34 * uiScale + i * lh);
       }
     }
     ctx.restore();
@@ -2607,6 +2860,10 @@
         } else if (k === "wave") {                   // fat wavefront chunk — bar across the travel direction
           ctx.lineWidth = br * 1.1;
           ctx.beginPath(); ctx.moveTo(bl.x - px * br * 1.3, bl.y - py * br * 1.3); ctx.lineTo(bl.x + px * br * 1.3, bl.y + py * br * 1.3); ctx.stroke();
+        } else if (k === "pill") {                   // classic/waves/journey shot — plain capsule (round-capped), no arrowhead
+          ctx.lineWidth = br * 1.5;
+          const half = br * 1.1;
+          ctx.beginPath(); ctx.moveTo(bl.x + ux * half, bl.y + uy * half); ctx.lineTo(bl.x - ux * half, bl.y - uy * half); ctx.stroke();
         } else {                                     // dart / default — streak + arrowhead
           const len = Math.max(11 * dpr, br * 2.2);
           ctx.lineWidth = Math.max(3 * dpr, br * 0.7);
@@ -2767,9 +3024,14 @@
 
   function lbHeaders() { return { apikey: LB.anonKey, Authorization: `Bearer ${LB.anonKey}` }; }
 
-  async function loadBoard(myName) {
-    if (!LB.url) { boardEl.innerHTML = '<li class="lb__empty">leaderboard not set up</li>'; return; }
-    boardEl.innerHTML = '<li class="lb__empty">loading…</li>'; // clear stale (other-mode) rows first
+  // the over panel and the journey-win panel each have their own leaderboard widgets;
+  // a "view" bundles one set of elements so the same load/submit logic drives both.
+  const overView = { board: boardEl, submit: lbSubmitEl, initials: initialsEl, btn: submitScoreBtn, status: lbStatusEl };
+  const winView = { board: winBoardEl, submit: winLbSubmitEl, initials: winInitialsEl, btn: winSubmitBtn, status: winStatusEl };
+  async function loadBoard(myName, view = overView) {
+    const board = view.board;
+    if (!LB.url) { board.innerHTML = '<li class="lb__empty">leaderboard not set up</li>'; return; }
+    board.innerHTML = '<li class="lb__empty">loading…</li>'; // clear stale (other-mode) rows first
     try {
       // prefer the per-mode board; if the `mode` column isn't set up yet, fall back
       // to the legacy single board so the leaderboard keeps working.
@@ -2777,22 +3039,22 @@
       if (!res.ok) res = await fetch(`${LB.url}/rest/v1/scores?select=name,score&order=score.desc&limit=${LB.limit}`, { headers: lbHeaders(), cache: "no-store" });
       if (!res.ok) throw 0;
       const list = await res.json();
-      if (!list.length) { boardEl.innerHTML = '<li class="lb__empty">no scores yet — be first</li>'; return; }
+      if (!list.length) { board.innerHTML = '<li class="lb__empty">no scores yet — be first</li>'; return; }
       let shownMine = false;
-      boardEl.innerHTML = list.map((e) => {
+      board.innerHTML = list.map((e) => {
         const mine = !shownMine && myName && e.name === myName ? (shownMine = true, "me") : "";
         return `<li class="${mine}"><span class="nm">${escHtml(e.name)}</span><span class="sc">${Number(e.score).toFixed(1)}</span></li>`;
       }).join("");
     } catch {
-      boardEl.innerHTML = '<li class="lb__empty">leaderboard unavailable</li>';
+      board.innerHTML = '<li class="lb__empty">leaderboard unavailable</li>';
     }
   }
 
-  async function submitScore() {
-    if (!LB.url) { lbStatusEl.textContent = "leaderboard not set up yet"; return; }
-    const name = (initialsEl.value || "AAA").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 3) || "AAA";
-    submitScoreBtn.disabled = true;
-    lbStatusEl.textContent = "submitting…";
+  async function submitScore(view = overView) {
+    if (!LB.url) { view.status.textContent = "leaderboard not set up yet"; return; }
+    const name = (view.initials.value || "AAA").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 3) || "AAA";
+    view.btn.disabled = true;
+    view.status.textContent = "submitting…";
     try {
       const base = { name, score: +lastRun.score.toFixed(1), time: +lastRun.time.toFixed(1), points: lastRun.points };
       const post = (body) => fetch(`${LB.url}/rest/v1/scores`, {
@@ -2804,12 +3066,12 @@
       let res = await post({ ...base, mode });
       if (!res.ok) res = await post(base);
       if (!res.ok) throw 0;
-      lbStatusEl.textContent = "saved!";
-      lbSubmitEl.hidden = true;
-      setTimeout(() => loadBoard(name), 700);
+      view.status.textContent = "saved!";
+      view.submit.hidden = true;
+      setTimeout(() => loadBoard(name, view), 700);
     } catch {
-      lbStatusEl.textContent = "submit failed — try again";
-      submitScoreBtn.disabled = false;
+      view.status.textContent = "submit failed — try again";
+      view.btn.disabled = false;
     }
   }
 
@@ -2840,8 +3102,9 @@
   // return to the mode-select menu from win/over/plot
   function backToMenu() {
     running = false; dead = false; paused = false; celebrating = false; setPauseBtn();
+    audio.setTriumph(false);
     overPanel.hidden = true; winPanel.hidden = true; plotPanel.hidden = true; helpPanel.hidden = true; arenaStartPanel.hidden = true;
-    document.body.classList.remove("playing", "paused");
+    document.body.classList.remove("playing", "paused", "idle");
     startPanel.hidden = false;
     mode = "classic"; biome = null; banner = null; loadBest();
     reset(); idleFrame();
@@ -2855,7 +3118,7 @@
     pauseBtn.setAttribute("aria-label", paused ? "resume" : "pause");
   }
   function togglePause() {
-    if (!running) return;
+    if (!running || mode === "idle") return; // no pause in idle/screensaver
     paused = !paused;
     document.body.classList.toggle("paused", paused); // show the cursor while paused (keeps .playing → pause btn stays)
     setPauseBtn();
@@ -2890,9 +3153,9 @@
     try {
       const u = new SpeechSynthesisUtterance(text);
       if (ttsVoice) u.voice = ttsVoice;
-      u.rate = 0.82 + Math.random() * 0.04;  // slower, measured
-      u.pitch = 1.45 + Math.random() * 0.06; // high, bright announcer
-      u.volume = 0.7;
+      u.rate = 0.96 + Math.random() * 0.03;  // brisk + steady → assertive, not draggy
+      u.pitch = 1.45 + Math.random() * 0.06; // bright announcer
+      u.volume = 0.95;                        // present + commanding
       u.onend = u.onerror = () => speakNext();
       synth.speak(u);
     } catch { speakNext(); }
@@ -2915,6 +3178,7 @@
   });
   document.getElementById("plot-begin").addEventListener("click", start);
   document.getElementById("plot-back").addEventListener("click", backToMenu);
+  document.getElementById("idle-btn").addEventListener("click", () => { mode = "idle"; startPanel.hidden = true; start(); }); // ambient screensaver
   // bullet hell weapon select
   arenaStartPanel.querySelectorAll("[data-weapon]").forEach((b) => b.addEventListener("click", () => { mode = "arena"; startWeapon = b.dataset.weapon; start(); }));
   document.getElementById("arena-back").addEventListener("click", backToMenu);
@@ -2924,20 +3188,33 @@
   document.getElementById("help-btn-over").addEventListener("click", openHelp);
   document.getElementById("help-btn-arena").addEventListener("click", openHelp);
   document.getElementById("help-back").addEventListener("click", closeHelp);
-  submitScoreBtn.addEventListener("click", submitScore);
-  initialsEl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.stopPropagation(); submitScore(); } });
+  submitScoreBtn.addEventListener("click", () => submitScore(overView));
+  initialsEl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.stopPropagation(); submitScore(overView); } });
+  winSubmitBtn.addEventListener("click", () => submitScore(winView));
+  winInitialsEl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.stopPropagation(); submitScore(winView); } });
   addEventListener("keydown", (e) => {
-    if (document.activeElement === initialsEl) return; // typing initials → ignore game keys
+    if (document.activeElement === initialsEl || document.activeElement === winInitialsEl) return; // typing initials → ignore game keys
     if (!helpPanel.hidden) { if (e.key === "Escape" || e.key === "h" || e.key === "H" || e.key === "?") closeHelp(); return; }
     if (!arenaStartPanel.hidden) { if (e.key === "Escape") backToMenu(); else if (e.key === "h" || e.key === "H" || e.key === "?") openHelp(); return; }
     if (!plotPanel.hidden) { if (e.key === "Enter" || e.key === " ") start(); else if (e.key === "Escape") backToMenu(); return; }
     if (!winPanel.hidden) { if (e.key === "Enter" || e.key === "Escape") backToMenu(); return; }
     if ((e.key === "h" || e.key === "H" || e.key === "?") && (!running || paused)) { openHelp(); return; } // menus + pause
     if ((e.key === "p" || e.key === "P" || e.key === " ") && running) { e.preventDefault(); togglePause(); return; }
-    if (e.key === "Escape") { if (paused) togglePause(); else if (!overPanel.hidden) backToMenu(); else window.location.href = "/"; }
+    if (e.key === "Escape") { if (paused) togglePause(); else if (mode === "idle" || !overPanel.hidden) backToMenu(); else window.location.href = "/"; }
     if ((e.key === "r" || e.key === "R") && dead) start();
     if (e.key === "m" || e.key === "M") toggleMute();
   });
+
+  // Browser Back, while in a game/sub-screen, returns to the main menu instead of
+  // leaving the page. We keep one "trap" history entry on top: popping it sends us
+  // to the menu and re-arms the trap; at the menu, Back leaves to home (like Esc).
+  addEventListener("popstate", () => {
+    if (!helpPanel.hidden) { history.pushState(null, ""); closeHelp(); return; }
+    const inGame = running || !overPanel.hidden || !plotPanel.hidden || !winPanel.hidden || !arenaStartPanel.hidden;
+    if (inGame) { history.pushState(null, ""); backToMenu(); }
+    else window.location.href = "/"; // already at the main menu → leave to home
+  });
+  history.pushState(null, ""); // arm the trap so the first Back is caught
 
   reset();
   idleFrame();

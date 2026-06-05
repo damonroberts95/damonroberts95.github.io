@@ -42,6 +42,8 @@ deeper changes.
 | `posts/index.json` | **Auto-generated** list of posts. Do not edit by hand. |
 | `scripts/build-index.mjs` | Regenerates `posts/index.json` **and** `sitemap.xml` from the post files |
 | `play.html` / `play.js` | "NODE RUN" — the hidden dodge game (the easter egg) |
+| `fonts.css` / `fonts/` | Self-hosted Clash Display + General Sans (`.woff2`). Linked by every page; no CDN. |
+| `vendor/marked.min.js` | Self-hosted Markdown parser (v12, MIT) used by `post.js`. Was a CDN script. |
 | `404.html` | Custom not-found page |
 | `og.png` / `og-card.html` | Social-share preview image, and the HTML used to generate it |
 | `favicon.svg` | Site icon (vaporwave gradient) |
@@ -365,8 +367,10 @@ Keep it on new pages.
   Start click. A browser permission popup on page load is **not** from this site
   (it requests no device permissions — verified) — it's the browser or an
   extension.
-- **Fonts look wrong** → they load from `api.fontshare.com` (Clash Display,
-  General Sans). If Fontshare is down the site falls back to system fonts.
+- **Fonts look wrong** → they are **self-hosted** (Clash Display, General Sans)
+  as `.woff2` files in `fonts/`, declared in `fonts.css` (linked by every page).
+  No CDN dependency. If a font fails the site falls back to system fonts. To
+  update a weight, drop a new `.woff2` in `fonts/` and point `fonts.css` at it.
 
 ---
 
