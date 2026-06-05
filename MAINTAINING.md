@@ -41,7 +41,8 @@ deeper changes.
 | `posts/` | Your blog posts — one `.md` file per post |
 | `posts/index.json` | **Auto-generated** list of posts. Do not edit by hand. |
 | `scripts/build-index.mjs` | Regenerates `posts/index.json` **and** `sitemap.xml` from the post files |
-| `play.html` / `play.js` | "NODE RUN" — the hidden dodge game (the easter egg) |
+| `play.html` / `play.js` | "NODE RUN" — the hidden dodge game (the easter egg). Deep-dived in `GAME.md`. |
+| `GAME.md` | Full internals reference for the game (`play.js`). Read it before changing the game. |
 | `fonts.css` / `fonts/` | Self-hosted Clash Display + General Sans (`.woff2`). Linked by every page; no CDN. |
 | `vendor/marked.min.js` | Self-hosted Markdown parser (v12, MIT) used by `post.js`. Was a CDN script. |
 | `404.html` | Custom not-found page |
@@ -198,39 +199,43 @@ midday by setting CSS variables (`--day`, `--night`, `--glow`).
 
 ## 8. The hidden game — "NODE RUN" (`play.html` + `play.js`)
 
-An easter-egg dodge game. **You are the cursor;** coloured "ghost" nodes chase
-you, form small same-colour clumps, and you grab power-ups and dodge a boss.
+An easter-egg arcade game. **You are the cursor;** coloured nodes chase you per
+their colour's personality, clump with their own colour, and string lethal "web"
+lines between near neighbours. Power-ups, bosses, five play modes, generative
+music, a global leaderboard, and an ambient idle/screensaver mode.
 
 **How to reach it:** on the home page, **click the "D" of DAMON** (desktop) or
-**drag the "D"** (touch). That's wired in `app.js` (the `#egg` element) and
-just navigates to `play.html`. There is no link to it anywhere else — that's
-the point.
+**drag the "D"** (touch). That's wired in `app.js` (the `#egg` element) and just
+navigates to `play.html`. There is no link to it anywhere else — that's the point.
+(The stale comment at the top of `play.js` mentioning "the O in ROBERTS" is wrong;
+it's the D.)
 
-`play.js` is a single self-contained IIFE. The pieces, roughly top to bottom:
+`play.js` is a single self-contained IIFE, ~3,200 lines, no dependencies. It is the
+most complex part of the site and has its **own full reference doc:**
 
-- **Tunable constants** near the top: `LINK_DIST`, `COH_R` (clump cohesion
-  range), `GROUP_R`/`SPLIT_SIZE` (when a clump splits), `JOLT_R`/`JOLT_X`
-  (anti-clump pop), `STAR_R`, and the point values `GEM_VAL`/`KILL_VAL`/
-  `BOSS_VAL`. Tweak these to change feel.
-- **`PERSONA`** — six behaviours keyed by node colour, modelled on Pac-Man
-  ghosts: chase (Blinky/purple), ambush (Pinky/pink), erratic (Inky/cyan),
-  shy (Clyde/orange), scatter (blue), cluster (yellow). Each has `spd`, `acc`,
-  `coh` (cohesion), and optionally `split`.
-- **Difficulty ramp** — inside `loop()`, the `maxSpeed` / `accel` / `targetCount`
-  lines. These climb slowly with elapsed time.
-- **`makeAudio()`** — a generative Web Audio engine (no audio files): a
-  vaporwave loop whose tempo tracks play speed (slow on the menu, slower on
-  death, very slow + an octave down during freeze) plus synth sound-effects.
-  `M` mutes.
-- **Power-ups:** rainbow star (expanding blast that destroys nodes as the wave
-  reaches them), freeze, shield (absorbs one hit, brightens the music while
-  held), point gems (with a combo multiplier), and an occasional boss.
-- **Rendering / performance:** physics runs one O(n²) pass that also builds the
-  link list; nodes are drawn grouped by colour without per-node shadows. If you
-  add visual effects, watch the frame cost here.
+> ### 📖 See **[GAME.md](GAME.md)** for the complete game internals
+> — architecture, the five modes (Classic / Waves / Journey / Bullet Hell / Idle),
+> node personalities & physics, biomes & background patterns, the Web-Audio music
+> engine, power-ups & bosses, the idle/screensaver, performance notes, a tunables
+> cheat-sheet, and a "how do I…" cookbook.
 
-Scores are time-survived + points, kept as a best in `localStorage` and
-submitted to the leaderboard (next section).
+The essentials:
+
+- **Modes:** Classic (endless), Waves (themed, bosses), Journey (8 scripted levels
+  + win screen), Bullet Hell (desktop WASD shooter), and **Idle** (a small button →
+  invincible ambient screensaver with song-structured music).
+- **Tunables:** constants near the top of `play.js` (lines ~52–67); per-colour feel
+  in `PERSONA`; per-biome music in `PROFILES`; the difficulty/spawn block in `loop()`.
+- **`makeAudio()`** — generative Web Audio (no files); a vaporwave loop, a Wipeout-
+  style arena track, and a full song for idle. `M` mutes.
+- **Leaderboard** — Supabase, per-mode, shown on both the game-over and journey-win
+  panels (see §9).
+- **Performance** — a pooled spatial grid keeps the physics near O(n); nodes are
+  batch-drawn per colour without per-node shadow. Keep new effects off the per-node
+  path. (Details + gotchas in GAME.md.)
+
+Scores are time-survived + points, kept as a best in `localStorage` and submitted to
+the leaderboard (next section).
 
 ---
 
@@ -383,3 +388,70 @@ Keep it on new pages.
 - Test locally over HTTP before pushing (don't rely on `file://`).
 - Commit messages: short imperative subject, body explaining *why* when it
   isn't obvious.
+
+---
+
+## 15. Code reference — file by file
+
+The game (`play.js`) has its own document: **[GAME.md](GAME.md)**. Here's the rest of
+the JavaScript.
+
+### `app.js` (home page only)
+
+Three jobs, each a small IIFE:
+
+1. **Footer year** — fills `#year` with the current year.
+2. **Copy-email button** (`#copy-email`) — on click, `navigator.clipboard.writeText`
+   of its `data-email`, shows the `#toast` for 2 s; falls back to a `mailto:` link if
+   the clipboard is blocked. **If you change the email, update `data-email` AND the
+   visible `mailto:` href in `index.html`.**
+3. **Easter-egg trigger** (`#egg`, the "D") — click (desktop) or drag >46 px / tap
+   <8 px (touch) navigates to `play.html`. Uses pointer capture; a
+   `lostpointercapture` handler springs the letter back if the gesture is dropped. It
+   also shimmers two random palette colours via the CSS vars `--egg-c1/--egg-c2` on
+   each animation iteration.
+4. **Posts list** — fetches `posts/index.json`, sorts newest-first, renders `<li>`s
+   into `#posts` (the Writing section, currently `hidden`). Titles/summaries are
+   HTML-escaped (`escapeHtml`); dates formatted en-GB (`formatDate`).
+
+All DOM hooks are optional (guarded), so `app.js` is safe to load on a page missing
+any of them.
+
+### `bg.js` (home, 404, and play pages)
+
+1. **Time-of-day wash** — runs on every page that loads it (even without the canvas).
+   `clockDaylight()` is a sine peaking at noon, zero at 06:00/18:00; `applyDaylight()`
+   writes CSS vars `--day / --night / --glow / --grain` on `:root` (re-applied every
+   5 min). `styles.css` uses these to brighten/dim the page.
+2. **Node-network canvas** — only if `<canvas id="bg">` exists (home/404; **not**
+   visible on `play.html`, which draws its own background). Drifting nodes, links
+   between near ones (squared-distance, O(n²) over a small capped count), energy
+   pulses travelling links, gentle cursor pull, click-to-disperse, anti-clump
+   repulsion. All knobs are in the `CONFIG` object near the top (density, link
+   distance, palette, speed, pulse rate). Honours `prefers-reduced-motion` (renders
+   one static frame, no interaction). DPR capped at 1.5.
+
+### `post.js` (single-post page)
+
+Reads `?slug=` (validated against `/^[a-z0-9-]+$/i`), fetches `posts/<slug>.md`,
+splits front-matter from body with a regex, renders the body via the self-hosted
+`marked.parse` (`vendor/marked.min.js`), and injects it into `#article` (title + date
+escaped; body is trusted repo markdown). Missing/invalid slug or fetch error →
+`showError("Post not found.")`. Sets `document.title` and the footer year.
+
+### `scripts/build-index.mjs` (build step, CI only)
+
+Node ES-module run by the GitHub Action. Scans `posts/*.md`, parses front-matter
+(`title`/`date`/`summary`), writes **`posts/index.json`** (array, newest-first) and
+**`sitemap.xml`** (home stamped today + each post stamped with its `date`). Never edit
+those two outputs by hand — they're regenerated every deploy. Run locally with
+`node scripts/build-index.mjs` to preview.
+
+### Gotchas worth repeating
+
+- **Slugs must be kebab-case lowercase** (`a-z0-9-`). GitHub Pages serves on Linux
+  (case-sensitive); a `Hello-World.md` file won't be found by a `hello-world` fetch.
+- **`.nojekyll`** must stay — it stops GitHub Pages running Jekyll over these raw
+  files. **`CNAME`** must stay — losing it breaks the custom domain.
+- Posts are published the moment their `.md` is pushed; there's no draft state. Delete
+  the file to unpublish (the next build drops it from the index + sitemap).

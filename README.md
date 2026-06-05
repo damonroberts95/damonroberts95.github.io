@@ -14,20 +14,23 @@ no framework. Hosted free on GitHub Pages.
 | `post.css`        | Styling for the single-post page                      |
 | `post.js`         | Loads + renders a post's Markdown                      |
 | `bg.js`           | Live node-network background animation                |
+| `play.html`/`play.js` | "NODE RUN" — hidden game (click the "D" of DAMON). See `GAME.md` |
+| `GAME.md`         | Full internals reference for the game                 |
+| `fonts.css`/`fonts/` | Self-hosted web fonts (no CDN)                      |
+| `vendor/marked.min.js` | Self-hosted Markdown parser used by `post.js`     |
 | `posts/`          | Your posts live here — one `.md` per post             |
 | `posts/index.json`| Auto-generated post list (don't edit by hand)         |
 | `scripts/`        | `build-index.mjs` — rebuilds the post list            |
 | `.github/`        | GitHub Action that builds + deploys on push           |
 | `CNAME`           | Tells GitHub Pages the custom domain                  |
 
-## Still to fill in
+For a maintainer's deep dive on the whole site, read **`MAINTAINING.md`**.
 
-- **LinkedIn link** — in `index.html` there's a commented-out LinkedIn block
-  (search for `LinkedIn`). Paste your real profile URL and remove the `<!-- -->`
-  comment markers to show it.
+## Editing content
 
-Email, tagline and focus chips are already set — edit the text in `index.html`
-any time.
+Email, tagline, focus chips, and the GitHub/LinkedIn links are all in
+`index.html` — edit the text any time. If you change the email, update **both**
+its `mailto:` href and the copy button's `data-email` attribute.
 
 ## Change the colours
 
