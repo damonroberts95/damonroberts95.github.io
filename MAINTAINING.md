@@ -41,8 +41,11 @@ deeper changes.
 | `posts/` | Your blog posts — one `.md` file per post |
 | `posts/index.json` | **Auto-generated** list of posts. Do not edit by hand. |
 | `scripts/build-index.mjs` | Regenerates `posts/index.json` **and** `sitemap.xml` from the post files |
-| `play.html` / `play.js` | "NODE RUN" — the hidden dodge game (the easter egg). Deep-dived in `GAME.md`. |
+| `play.html` / `play.js` | "NODE RUN" — the unlinked dodge game (easter egg, but indexable). Deep-dived in `GAME.md`. |
 | `GAME.md` | Full internals reference for the game (`play.js`). Read it before changing the game. |
+| `audio/vo/` | Pre-rendered announcer clips (`<slug>.wav`) + `manifest.json`. **Generated** — see below. |
+| `scripts/gen-voiceovers.ps1` | Renders the announcer voiceover clips via Windows SAPI. Phrase tables mirror `say(...)` in `play.js`; re-run after changing spoken lines. |
+| `scripts/leaderboard-rls.sql` | Supabase RLS + rate-limit/validation trigger for the leaderboard (run once in the SQL editor). See §9. |
 | `fonts.css` / `fonts/` | Self-hosted Clash Display + General Sans (`.woff2`). Linked by every page; no CDN. |
 | `vendor/marked.min.js` | Self-hosted Markdown parser (v12, MIT) used by `post.js`. Was a CDN script. |
 | `404.html` | Custom not-found page |
@@ -308,9 +311,19 @@ key can't delete by design).
   Only the `anon`/publishable key belongs in `play.js`.
 - The Data API exposes **every table in the `public` schema**. If you add more
   tables, enable RLS on them or they're world-readable via the anon key.
-- There's no anti-cheat — anyone can read the key and POST a score. That's
-  acceptable for a hobby leaderboard. If it gets abused, add rate-limiting or
-  move writes behind a serverless function.
+- There's no anti-cheat — anyone can read the key and POST a score. For basic
+  abuse protection, **`scripts/leaderboard-rls.sql`** adds a `BEFORE INSERT` trigger
+  (`enforce_score_insert`) that rate-limits per client IP (15s cooldown + 8/hr,
+  logged in a `submit_log` table) and validates fields (name shape, numeric bounds,
+  allowed mode). It coexists with the `trim_scores` AFTER INSERT trigger above —
+  different name, different timing. It manages policies named `scores_read` /
+  `scores_insert`; if your existing policies have other names, drop those first so
+  you don't end up with duplicate permissive policies. IP comes from the **last**
+  `x-forwarded-for` hop (the trusted-proxy one; the leftmost is client-spoofable).
+  This is best-effort (CGNAT shares IPs) — for airtight limits move writes behind a
+  serverless/Edge function with the `service_role` key. The client also self-limits
+  (`lbRateBlock` in `play.js`), but that's only a courtesy; the DB trigger is the
+  real gate.
 
 To turn the leaderboard **off**, blank out `LB.url` in `play.js` — the board
 then shows "leaderboard not set up" and the submit button no-ops.

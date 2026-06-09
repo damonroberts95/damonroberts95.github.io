@@ -46,6 +46,7 @@ console.log(`Wrote posts/index.json — ${posts.length} post(s).`);
 const today = new Date().toISOString().slice(0, 10);
 const urls = [
   { loc: `${SITE}/`, lastmod: today },
+  { loc: `${SITE}/play.html`, lastmod: today }, // NODE RUN game (unlinked easter egg, but indexable)
   ...posts.map((p) => ({
     loc: `${SITE}/post.html?slug=${p.slug}`,
     lastmod: p.date,

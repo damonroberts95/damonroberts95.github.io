@@ -99,6 +99,8 @@
      elapsed so the music tracks the game's pace. ---- */
   function makeAudio() {
     let ctx = null, master, mlp, music, fx, verb, vg, noise, muted = false, playing = false, step = 0, nextNote = 0, timer = null, bright = false, triumph = false;
+    const voiceCache = new Map(); // url → decoded AudioBuffer (announcer clips)
+    let voiceNodes = [];          // live voice source/LFO nodes, so mute can stop them
     const CHORDS = [
       { root: 57, ivs: [0, 3, 7, 10] }, // Am7
       { root: 53, ivs: [0, 4, 7, 11] }, // Fmaj7
@@ -412,6 +414,44 @@
           synth(220 + Math.random() * 280, t, 0.12, { type: "triangle", gain: 0.09, cut: 4000, dest: fx });
         }
       },
+      // Announcer clip through a "digital sultry" chain: warmth low-pass, a detuned
+      // digital double (chorus shimmer), a short reverb send for space, and a slow
+      // tremolo waver for a passionate, breathing feel. Returns a promise that resolves
+      // when the clip finishes (so play.js can chain a stitched line part-by-part).
+      playVoice(url) {
+        ensure();
+        const load = voiceCache.has(url)
+          ? Promise.resolve(voiceCache.get(url))
+          : fetch(url).then((r) => r.arrayBuffer())
+              .then((ab) => new Promise((res, rej) => ctx.decodeAudioData(ab, (b) => { voiceCache.set(url, b); res(b); }, rej)));
+        return load.then((buf) => new Promise((resolve) => {
+          const t = ctx.currentTime + 0.02, dur = buf.duration;
+          const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 3100; lp.Q.value = 0.8; // intimate warmth
+          const out = ctx.createGain(); out.connect(master); lp.connect(out);
+          const send = ctx.createGain(); send.gain.value = 0.20; out.connect(send); send.connect(verb); // a little space
+          out.gain.setValueAtTime(0.0001, t); out.gain.linearRampToValueAtTime(1.05, t + 0.05); // base level (fade in, no click)
+          const lfo = ctx.createOscillator(); lfo.frequency.value = 5.0;                          // ~5 Hz passionate waver
+          const lfg = ctx.createGain(); lfg.gain.value = 0.05; lfo.connect(lfg); lfg.connect(out.gain); lfo.start(t);
+          const ATTACK = 70;                                                                      // cents of pitch lift at each clip onset
+          const voice = (cents, gain, delay) => {                                                 // a stacked, optionally-delayed take
+            const s = ctx.createBufferSource(); s.buffer = buf;
+            // word/clip onsets start a bit higher then settle → a lifted, eager attack
+            s.detune.setValueAtTime(cents + ATTACK, t + (delay || 0));
+            s.detune.linearRampToValueAtTime(cents, t + (delay || 0) + 0.09);
+            const g = ctx.createGain(); g.gain.value = gain; s.connect(g);
+            if (delay) { const d = ctx.createDelay(); d.delayTime.value = delay; g.connect(d); d.connect(lp); }
+            else g.connect(lp);
+            s.start(t); return s;
+          };
+          const s1 = voice(0, 0.95, 0);    // dry lead
+          const s2 = voice(15, 0.34, 0.013); // +15c digital double, 13 ms behind → chorus shimmer
+          voiceNodes.push(s1, s2, lfo);
+          const cleanup = () => { voiceNodes = voiceNodes.filter((n) => n !== s1 && n !== s2 && n !== lfo); try { lfo.stop(); } catch {} resolve(); };
+          s1.onended = cleanup;
+          s1.stop(t + dur + 0.05); // hard stop backstop so a dropped onended can't hang the queue
+        }));
+      },
+      stopVoice() { for (const n of voiceNodes) { try { n.stop(); } catch {} } voiceNodes = []; },
       toggleMute() { if (!master) return false; muted = !muted; master.gain.setTargetAtTime(muted ? 0 : 0.8, ctx.currentTime, 0.02); return muted; },
       setShield(on) { bright = on; if (mlp) mlp.frequency.setTargetAtTime(on || triumph ? 16000 : prof.bright, ctx.currentTime, 0.12); },
       setTriumph(on) { triumph = on; if (mlp) mlp.frequency.setTargetAtTime(on || bright ? 16000 : prof.bright, ctx.currentTime, 0.3); }, // power-cache wave → brighter + (via curBPM) quicker
@@ -981,7 +1021,7 @@
     say(bossWave ? "Wave " + wave + ". " + sub.replace(" · ", ", ")
       : waveType === "special" ? "Wave " + wave + ". Power cache"
       : themeColor ? "Wave " + wave + ". " + (PERSONA_NAME[themeColor] || "")
-      : "Wave " + wave);
+      : "Wave " + wave + ". Mixed"); // mixed wave (no theme colour) — voice the descriptor like the banner does
   }
 
   // special wave: scatter gems and front-load the powerups (incl. the shooter)
@@ -3024,6 +3064,31 @@
 
   function lbHeaders() { return { apikey: LB.anonKey, Authorization: `Bearer ${LB.anonKey}` }; }
 
+  // Client-side rate cap on submissions — throttles casual spam (a cooldown between
+  // submits + a rolling hourly cap). The anon key is public, so this is a courtesy
+  // limit, not security; real enforcement belongs in a Supabase policy/edge function.
+  const LB_COOLDOWN_MS = 15000;      // min gap between submits
+  const LB_WINDOW_MS = 3600000;      // rolling window = 1 hour
+  const LB_MAX_PER_WINDOW = 8;       // submits allowed per window
+  const LB_LOG_KEY = "noderun-lb-submits";
+  function lbSubmitLog() {
+    const now = Date.now();
+    let log; try { log = JSON.parse(localStorage.getItem(LB_LOG_KEY) || "[]"); } catch { log = []; }
+    return (Array.isArray(log) ? log : []).filter((t) => typeof t === "number" && now - t < LB_WINDOW_MS);
+  }
+  // returns a user-facing reason string if a submit should be blocked, else null
+  function lbRateBlock() {
+    const now = Date.now(), log = lbSubmitLog();
+    if (log.length && now - log[log.length - 1] < LB_COOLDOWN_MS)
+      return `slow down — wait ${Math.ceil((LB_COOLDOWN_MS - (now - log[log.length - 1])) / 1000)}s`;
+    if (log.length >= LB_MAX_PER_WINDOW) return "submit limit reached — try again later";
+    return null;
+  }
+  function lbRecordSubmit() {
+    const log = lbSubmitLog(); log.push(Date.now());
+    try { localStorage.setItem(LB_LOG_KEY, JSON.stringify(log)); } catch {}
+  }
+
   // the over panel and the journey-win panel each have their own leaderboard widgets;
   // a "view" bundles one set of elements so the same load/submit logic drives both.
   const overView = { board: boardEl, submit: lbSubmitEl, initials: initialsEl, btn: submitScoreBtn, status: lbStatusEl };
@@ -3052,9 +3117,12 @@
 
   async function submitScore(view = overView) {
     if (!LB.url) { view.status.textContent = "leaderboard not set up yet"; return; }
+    const blocked = lbRateBlock();
+    if (blocked) { view.status.textContent = blocked; return; } // rate cap: bail before hitting the network
     const name = (view.initials.value || "AAA").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 3) || "AAA";
     view.btn.disabled = true;
     view.status.textContent = "submitting…";
+    lbRecordSubmit(); // count the attempt (success or fail) so retries respect the cooldown
     try {
       const base = { name, score: +lastRun.score.toFixed(1), time: +lastRun.time.toFixed(1), points: lastRun.points };
       const post = (body) => fetch(`${LB.url}/rest/v1/scores`, {
@@ -3126,8 +3194,25 @@
 
   let muted = false;
   const muteLabel = (m) => (m ? "🔇 Muted" : "🔊 Sound on") + (MOBILE ? "" : " (M)");
-  function toggleMute() { audio.resume(); muted = audio.toggleMute(); muteEl.textContent = muteLabel(muted); if (muted && window.speechSynthesis) { speechQ = []; window.speechSynthesis.cancel(); } }
+  function toggleMute() {
+    audio.resume(); muted = audio.toggleMute(); muteEl.textContent = muteLabel(muted);
+    if (muted) { speechQ = []; audio.stopVoice(); voPlaying = false; if (window.speechSynthesis) window.speechSynthesis.cancel(); }
+  }
   muteEl.textContent = muteLabel(false); // set initial label (drops "(M)" on mobile)
+
+  // Pre-rendered announcer: one fixed voice on every platform (Web Speech voices
+  // vary wildly across OSes). scripts/gen-voiceovers.ps1 renders audio/vo/<slug>.wav
+  // for every line the game speaks + a manifest of available slugs. Any phrase not
+  // in the manifest (e.g. wave numbers past the render cap) falls back to Web Speech.
+  const VO_BASE = "audio/vo/";
+  let voManifest = null;   // Set<slug> once loaded; null = not loaded yet → use Web Speech
+  let voPlaying = false;   // a clip/line is mid-playback (audio engine owns the actual nodes)
+  // slug MUST match Get-Slug in scripts/gen-voiceovers.ps1
+  const voSlug = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  fetch(VO_BASE + "manifest.json", { cache: "force-cache" })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((arr) => { voManifest = new Set(Array.isArray(arr) ? arr : []); })
+    .catch(() => { voManifest = new Set(); }); // failed fetch → empty set → Web Speech everywhere
 
   // Wipeout-style announcer via Web Speech — English female (US first), never male.
   let ttsVoice = null;
@@ -3146,10 +3231,51 @@
   if (window.speechSynthesis) { pickVoice(); window.speechSynthesis.onvoiceschanged = pickVoice; }
   // queue announcer lines so rapid pickups don't cancel each other mid-word
   let speechQ = [];
-  function speakNext() {
+  // Numbered lines (Wave N, "<weapon>, level N") are unbounded — waves never stop and
+  // weapon level keeps climbing (play.js:809) — so we can't pre-render every one. We DO
+  // render the common cases as whole clips (best cadence); past that, fall back to a clip
+  // bank: the leading words + a number (0-99) + any trailing words, stitched back-to-back.
+  // Returns an ordered slug list, or null if this phrase isn't a known numbered pattern.
+  function composeClips(text) {
+    let m;
+    if ((m = /^(.+), level (\d+)$/.exec(text))) return [voSlug(m[1]), "level", m[2]]; // weapon, "level", N
+    if ((m = /^Wave (\d+)(?:\. (.+))?$/.exec(text))) {
+      const parts = ["wave", m[1]];
+      if (m[2]) {
+        let mm;
+        if ((mm = /^SHOOTER BOSS, (.+)$/.exec(m[2]))) parts.push("shooter-boss", voSlug(mm[1]));
+        else if ((mm = /^BOSS, (.+)$/.exec(m[2]))) parts.push("boss", voSlug(mm[1]));
+        else parts.push(voSlug(m[2])); // "Power cache" or a persona
+      }
+      return parts;
+    }
+    return null;
+  }
+  // play a list of clip slugs back-to-back through the audio engine's voice chain (the
+  // small gap between them reads as the natural ". " / ", " pause). Calls speakNext()
+  // when the whole line finishes.
+  function playSeq(slugs) {
+    voPlaying = true;
+    let i = 0;
+    const step = () => {
+      if (i >= slugs.length) { voPlaying = false; speakNext(); return; }
+      audio.playVoice(VO_BASE + slugs[i++] + ".wav").then(step, step); // resolve→next, reject(skip bad part)→next
+    };
+    step();
+  }
+  // play pre-rendered audio for this phrase → true (we own the queue), else false so the
+  // caller falls back to Web Speech. Exact whole-phrase clip wins; otherwise stitch parts.
+  function playClip(text) {
+    if (!voManifest) return false;
+    const slug = voSlug(text);
+    if (voManifest.has(slug)) { playSeq([slug]); return true; }
+    const parts = composeClips(text);
+    if (parts && parts.every((p) => voManifest.has(p))) { playSeq(parts); return true; }
+    return false;
+  }
+  function webSpeak(text) {
     const synth = window.speechSynthesis;
-    if (!synth || !speechQ.length || synth.speaking || synth.pending) return;
-    const text = speechQ.shift();
+    if (!synth) { speakNext(); return; }
     try {
       const u = new SpeechSynthesisUtterance(text);
       if (ttsVoice) u.voice = ttsVoice;
@@ -3160,8 +3286,18 @@
       synth.speak(u);
     } catch { speakNext(); }
   }
+  function speakNext() {
+    if (voPlaying) return;                          // a clip is mid-playback
+    const synth = window.speechSynthesis;
+    if (synth && (synth.speaking || synth.pending)) return; // Web Speech mid-utterance
+    if (!speechQ.length) return;
+    const text = speechQ.shift();
+    if (playClip(text)) return;                     // pre-rendered clip route
+    webSpeak(text);                                 // fallback route
+  }
   function say(text) {
-    if (muted || !window.speechSynthesis) return;
+    if (muted) return;
+    if (!window.speechSynthesis && voManifest && voManifest.size === 0) return; // no clips + no Web Speech
     if (speechQ.length > 3) speechQ.shift(); // cap backlog so the voice doesn't lag behind play
     speechQ.push(text);
     speakNext();

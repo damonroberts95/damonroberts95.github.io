@@ -289,9 +289,21 @@ brightness + reverb toward it. The crossfade time-constant is **idle ~24 s, aren
 `sfx(name)` plays synth sound-effects — **and is a no-op in idle** (idle is music
 only).
 
-**Voiceover (TTS):** `say(text)` queues a Web-Speech utterance (English female voice
-preferred), used for wave/level names and start/end lines. Config (rate/pitch/volume)
-is in `speakNext()`.
+**Voiceover (announcer):** `say(text)` queues an announcer line (wave/level names,
+buffs, start/end lines). Browsers ship wildly different Web-Speech voices, so the
+lines are **pre-rendered to one fixed voice**: `scripts/gen-voiceovers.ps1` (Windows
+SAPI, Microsoft Hazel) writes `audio/vo/<slug>.wav` for every phrase plus a
+`manifest.json` of available slugs. The phrase tables in that script **mirror the
+`say(...)` call sites** — add/rename a spoken line and you must re-run it.
+
+Playback (`playClip` / `playSeq` / `composeClips`): the exact whole-phrase clip wins;
+otherwise numbered lines (`Wave N …`, `<weapon>, level N`) are **stitched** from a
+clip bank (leading words + a number 0–99 + trailing words), since waves and weapon
+level are unbounded. Any phrase with no clip / missing part falls back to live Web
+Speech (`webSpeak`). Clips play through the audio engine's `playVoice()` — a "digital
+sultry" chain (warmth low-pass, detuned digital double, reverb send, tremolo waver,
+per-onset pitch lift) — so they ride the master bus and mute. The base voice's
+pitch/rate are render-time flags in the `.ps1`; the character/FX live in `playVoice()`.
 
 ---
 
@@ -329,6 +341,10 @@ The leaderboard UI is duplicated on two panels (game-over `#over` and journey-wi
 `#win`). `loadBoard(myName, view)` and `submitScore(view)` take a **view** object
 (`overView` / `winView`) bundling that panel's elements, so one set of functions
 drives both. Scores are filtered/inserted per `mode`.
+
+`submitScore` is **rate-capped client-side** (`lbRateBlock` / `lbRecordSubmit`: 15s
+cooldown + 8/hr per browser, in `localStorage`). That's only a courtesy — the real
+enforcement is a DB trigger (`scripts/leaderboard-rls.sql`); see MAINTAINING.md §9.
 
 ---
 
