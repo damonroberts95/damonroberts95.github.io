@@ -46,6 +46,8 @@ deeper changes.
 | `audio/vo/` | Pre-rendered announcer clips (`<slug>.wav`) + `manifest.json`. **Generated** — see below. |
 | `scripts/gen-voiceovers.ps1` | Renders the announcer voiceover clips via Windows SAPI. Phrase tables mirror `say(...)` in `play.js`; re-run after changing spoken lines. |
 | `scripts/leaderboard-rls.sql` | Supabase RLS + rate-limit/validation trigger for the leaderboard (run once in the SQL editor). See §9. |
+| `scripts/keepalive-table.sql` | Tiny `keepalive` table + policies the cron below writes to (run once in the SQL editor). See §9. |
+| `.github/workflows/keepalive.yml` | Cron (every 3 days) that pings Supabase so the free-tier project doesn't auto-pause. See §9. |
 | `fonts.css` / `fonts/` | Self-hosted Clash Display + General Sans (`.woff2`). Linked by every page; no CDN. |
 | `vendor/marked.min.js` | Self-hosted Markdown parser (v12, MIT) used by `post.js`. Was a CDN script. |
 | `404.html` | Custom not-found page |
@@ -327,6 +329,27 @@ key can't delete by design).
 
 To turn the leaderboard **off**, blank out `LB.url` in `play.js` — the board
 then shows "leaderboard not set up" and the submit button no-ops.
+
+**Keeping the free Supabase project alive:** Supabase auto-pauses free-tier
+projects after **7 days with no API requests**. A site with low traffic can
+easily go quiet that long, which would silently kill the leaderboard.
+`.github/workflows/keepalive.yml` runs every 3 days and:
+
+1. `GET`s the scores board (a normal read).
+2. Upserts the single row in a dedicated `keepalive` table (a **write** —
+   stronger evidence of activity than a read, and it doubles as a smoke test
+   that insert/RLS still works). Table + policies live in
+   `scripts/keepalive-table.sql` — run it once in the SQL editor, same as
+   `leaderboard-rls.sql`. It never touches the public `scores` table.
+3. Commits an updated timestamp file back to the repo.
+
+Step 3 is there for a separate reason: GitHub disables **scheduled**
+workflows after 60 days with no *repository* activity (pushes) — even one
+that has been firing correctly on schedule the whole time doesn't count.
+Committing on every run resets that clock, so the workflow keeps re-enabling
+itself indefinitely without you needing to touch it.
+
+If you ever migrate off Supabase, delete both files and the workflow.
 
 ---
 

@@ -1,0 +1,68 @@
+# Keeps the NODE RUN leaderboard's Supabase project out of the free-tier
+# auto-pause (paused after 7 days with zero API requests). Every 3 days:
+#   1. GET the scores board (read) — cheap, matches normal traffic.
+#   2. Upsert the single row in `keepalive` (write) — a real write is a much
+#      stronger "this project is alive" signal than a read alone, and
+#      doubles as a smoke test that the insert/RLS path still works.
+#      Table + policies: scripts/keepalive-table.sql (run once in Supabase).
+#   3. Commit a timestamp file back to the repo.
+#
+# Step 3 matters for a reason unrelated to Supabase: GitHub disables
+# *scheduled* workflows after 60 days with no repository activity (pushes),
+# even if the workflow itself has been running fine on schedule the whole
+# time. Pushing a small commit each run counts as repo activity, so it
+# resets that clock — the workflow keeps itself enabled indefinitely.
+#
+# LB.url / LB.anonKey below match the values in play.js. The anon key is a
+# public/publishable key by design (see MAINTAINING.md §9) — safe to commit.
+
+name: Keepalive (Supabase + workflow schedule)
+
+on:
+  schedule:
+    - cron: "17 4 */3 * *" # every 3 days, off-peak minute (Supabase pauses at 7 days idle)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+env:
+  LB_URL: https://ktpjbqmlapmqshyjrzji.supabase.co
+  LB_ANON_KEY: sb_publishable_nBZJyXI8Xj-XVjXVXR4VRw_6bPw8dsm
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Ping leaderboard (read)
+        run: |
+          curl -fsS "$LB_URL/rest/v1/scores?select=id&limit=1" \
+            -H "apikey: $LB_ANON_KEY" \
+            -H "Authorization: Bearer $LB_ANON_KEY" \
+            -o /dev/null
+
+      - name: Ping keepalive row (write)
+        run: |
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          curl -fsS "$LB_URL/rest/v1/keepalive?on_conflict=id" \
+            -H "apikey: $LB_ANON_KEY" \
+            -H "Authorization: Bearer $LB_ANON_KEY" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: resolution=merge-duplicates,return=minimal" \
+            -d "{\"id\":1,\"pinged_at\":\"$now\"}"
+
+      - name: Record last run (keeps this schedule from being auto-disabled)
+        run: |
+          mkdir -p .github
+          date -u +%Y-%m-%dT%H:%M:%SZ > .github/keepalive-log.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/keepalive-log.txt
+          git diff --cached --quiet || git commit -m "chore: keepalive ping $(date -u +%Y-%m-%d)"
+          git push
