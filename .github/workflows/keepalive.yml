@@ -1,5 +1,5 @@
 # Keeps the NODE RUN leaderboard's Supabase project out of the free-tier
-# auto-pause (paused after 7 days with zero API requests). Daily:
+# auto-pause (paused after 7 days with zero API requests). 1–3 times a day:
 #   1. GET the scores board (read) — cheap, matches normal traffic.
 #      If the read fails (paused projects lose DNS entirely), self-heal:
 #      call the Supabase Management API to restore the project, then wait
@@ -10,7 +10,16 @@
 #      doubles as a smoke test that the insert/RLS path still works.
 #      Table + policies: scripts/keepalive-table.sql (run once in Supabase).
 #   3. Commit a timestamp file back to the repo — but only when the last
-#      push is over 7 days old, so daily runs don't spam the history.
+#      push is over 7 days old, so frequent runs don't spam the history.
+#
+# So the traffic doesn't look like a metronome (same minute every day),
+# the schedule is jittered:
+#   - The 04:17 UTC slot ALWAYS pings — that's the daily guarantee, and the
+#     slot that catches a pause overnight.
+#   - The 11:43 and 20:09 slots each ping with ~50% probability.
+#   - Every scheduled run first sleeps a random 0–50 minutes.
+# Net effect: 1–3 pings/day (2 on average) at times that drift run to run.
+# Manual runs (workflow_dispatch) never skip and never sleep.
 #
 # Step 3 matters for a reason unrelated to Supabase: GitHub disables
 # *scheduled* workflows after 60 days with no repository activity (pushes),
@@ -25,7 +34,9 @@ name: Keepalive (Supabase + workflow schedule)
 
 on:
   schedule:
-    - cron: "17 4 * * *" # daily, off-peak minute (limits leaderboard downtime if the project pauses anyway)
+    - cron: "17 4 * * *" # anchor slot — always pings
+    - cron: "43 11 * * *" # ~50% of days
+    - cron: "9 20 * * *" # ~50% of days
   workflow_dispatch:
 
 permissions:
@@ -39,15 +50,37 @@ env:
   LB_URL: https://ktpjbqmlapmqshyjrzji.supabase.co
   LB_ANON_KEY: sb_publishable_nBZJyXI8Xj-XVjXVXR4VRw_6bPw8dsm
   PROJECT_REF: ktpjbqmlapmqshyjrzji
+  ANCHOR_CRON: "17 4 * * *"
 
 jobs:
   ping:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
+      - name: Decide whether to ping this run (and jitter the time)
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "Manual run — no skip, no jitter."
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ github.event.schedule }}" != "$ANCHOR_CRON" ] && [ $((RANDOM % 2)) -eq 0 ]; then
+            echo "Optional slot lost the coin flip — skipping this run."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          jitter=$((RANDOM % 3000))
+          echo "Sleeping ${jitter}s of jitter before pinging."
+          sleep "$jitter"
+          echo "go=true" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.go == 'true'
 
       - name: Ping leaderboard (read)
         id: read
+        if: steps.gate.outputs.go == 'true'
         continue-on-error: true
         run: |
           curl -fsS "$LB_URL/rest/v1/scores?select=id&limit=1" \
@@ -84,6 +117,7 @@ jobs:
           exit 1
 
       - name: Ping keepalive row (write)
+        if: steps.gate.outputs.go == 'true'
         run: |
           now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           curl -fsS "$LB_URL/rest/v1/keepalive?on_conflict=id" \
@@ -94,6 +128,7 @@ jobs:
             -d "{\"id\":1,\"pinged_at\":\"$now\"}"
 
       - name: Record last run (keeps this schedule from being auto-disabled)
+        if: steps.gate.outputs.go == 'true'
         run: |
           head_age=$(( $(date +%s) - $(git log -1 --format=%ct) ))
           if [ "$head_age" -lt $((7 * 24 * 3600)) ]; then

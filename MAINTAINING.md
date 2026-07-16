@@ -333,7 +333,10 @@ then shows "leaderboard not set up" and the submit button no-ops.
 **Keeping the free Supabase project alive:** Supabase auto-pauses free-tier
 projects after **7 days with no API requests**. A site with low traffic can
 easily go quiet that long, which would silently kill the leaderboard.
-`.github/workflows/keepalive.yml` runs daily and:
+`.github/workflows/keepalive.yml` runs 1–3 times a day (2 on average) at
+jittered times — one anchor slot (04:17 UTC) always fires, two optional
+slots each fire ~50% of days, and every scheduled run sleeps a random
+0–50 minutes first, so the pings don't look like a metronome. Each ping:
 
 1. `GET`s the scores board (a normal read). If the read fails (a paused
    project loses its DNS entirely, so the symptom is
